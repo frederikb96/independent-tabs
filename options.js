@@ -95,11 +95,26 @@ document.addEventListener('DOMContentLoaded', async () => {
       await chrome.storage.local.clear();
       await chrome.storage.local.set(backup.data);
 
+      // Verify restore worked
+      const verified = await chrome.storage.local.get(['savedSessions', 'items', 'customNames']);
+      console.log('Restored data:', verified);
+
       // Reload settings display
       const newSettings = backup.data.settings || { newTabPosition: 'bottom' };
       positionSelect.value = newSettings.newTabPosition || 'bottom';
 
-      showSaved('Backup restored! Reload the side panel to see changes.');
+      // Show success with alert to ensure visibility
+      const restoredItems = Array.isArray(verified.items) ? verified.items.length : 0;
+      const restoredSessions = Object.keys(verified.savedSessions || {}).length;
+      const restoredNames = Object.keys(verified.customNames || {}).length;
+
+      alert(`Backup restored successfully!\n\n` +
+        `- ${restoredItems} items\n` +
+        `- ${restoredSessions} saved sessions\n` +
+        `- ${restoredNames} custom names\n\n` +
+        `Close and reopen the side panel to see changes.`);
+
+      showSaved('Backup restored!');
     } catch (err) {
       showError('Import failed: ' + err.message);
     }
