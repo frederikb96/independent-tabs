@@ -480,7 +480,9 @@ function handleTabClick(e, tabId, data) {
     lastClickedTab = tabId;
     keyboardFocusedTabId = tabId;
     chrome.tabs.update(tabId, { active: true });
-    chrome.windows.update(data.windowId, { focused: true });
+    // Don't call chrome.windows.update - it steals focus from side panel
+    // Keep focus in side panel for keyboard navigation
+    document.getElementById('tab-list').focus();
   }
 }
 
@@ -1165,22 +1167,20 @@ async function restoreSession(sessionId) {
     // Focus first tab in the group
     if (existingGroup.tabs.length > 0) {
       const firstTabId = existingGroup.tabs[0];
-      const tabInfo = tabData[firstTabId];
-      if (tabInfo) {
-        await chrome.tabs.update(firstTabId, { active: true });
-        await chrome.windows.update(tabInfo.windowId, { focused: true });
-      }
+      await chrome.tabs.update(firstTabId, { active: true });
+      // Don't call chrome.windows.update - it steals focus from side panel
       keyboardFocusedTabId = firstTabId;
     }
 
     render();
 
-    // Scroll to the group
+    // Scroll to the group and focus tab-list for keyboard navigation
     setTimeout(() => {
       const groupEl = document.querySelector(`[data-group-id="${existingGroup.group}"]`);
       if (groupEl) {
         groupEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }
+      document.getElementById('tab-list').focus();
     }, 50);
 
     return;
