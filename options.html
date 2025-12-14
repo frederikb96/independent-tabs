@@ -92,6 +92,76 @@
         color: #81c784;
       }
     }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 24px 0 12px 0;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .backup-buttons {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    button {
+      padding: 10px 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: var(--bg-color);
+      color: var(--text-color);
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    button:hover {
+      background: var(--border-color);
+    }
+
+    button.primary {
+      background: var(--accent-color);
+      border-color: var(--accent-color);
+      color: white;
+    }
+
+    button.primary:hover {
+      opacity: 0.9;
+    }
+
+    #import-file {
+      display: none;
+    }
+
+    .backup-info {
+      font-size: 12px;
+      color: #888;
+      margin-top: 8px;
+    }
+
+    .error {
+      margin-top: 12px;
+      padding: 8px 12px;
+      background: #ffebee;
+      color: #c62828;
+      border-radius: 6px;
+      font-size: 13px;
+      display: none;
+    }
+
+    .error.show {
+      display: block;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .error {
+        background: #3e1a1a;
+        color: #ef9a9a;
+      }
+    }
   </style>
 </head>
 <body>
@@ -107,6 +177,21 @@
   </div>
 
   <div id="saved" class="saved">Settings saved</div>
+
+  <h2 class="section-title">Backup & Restore</h2>
+
+  <div class="setting">
+    <div class="backup-buttons">
+      <button id="export-btn" class="primary">Export Backup</button>
+      <button id="import-btn">Import Backup</button>
+      <input type="file" id="import-file" accept=".json">
+    </div>
+    <p class="backup-info">
+      Export saves all your data: tab order, groups, custom names, saved sessions, and settings.
+      <br>Use this before uninstalling to preserve your data.
+    </p>
+    <div id="error" class="error"></div>
+  </div>
 
   <script src="options.js"></script>
 </body>

@@ -11,7 +11,8 @@
   "permissions": [
     "sidePanel",
     "tabs",
-    "storage"
+    "storage",
+    "downloads"
   ],
   "background": {
     "service_worker": "service-worker.js"

@@ -61,6 +61,12 @@ Chrome's tab bar order changes when you use extensions like "Most Recent Used Ta
 - Already-saved groups show "Update saved session" + "Save as new..."
 - Sessions persist across browser restarts
 
+**Backup & Restore (Settings page):**
+- **Export Backup** → downloads JSON file with all your data
+- **Import Backup** → restores from a backup file
+- Includes: tab order, groups, custom names, saved sessions, settings
+- Use before uninstalling to preserve your data
+
 ## How It Works
 
 ```
