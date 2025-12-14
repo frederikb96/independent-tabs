@@ -48,6 +48,7 @@ Chrome's tab bar order changes when you use extensions like "Most Recent Used Ta
 - **Drag tab out of group** → automatically leaves the group
 - **Drag group header** → move entire group with all tabs
 - **Right-click group header** → Rename, Change color, Ungroup all, Close all
+- **Open link from grouped tab** → new tab auto-joins same group
 - Groups have colored left borders and headers
 - Empty groups are automatically removed
 

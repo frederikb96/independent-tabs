@@ -159,6 +159,25 @@ function setupEventListeners() {
       return;
     }
 
+    // Check if opener tab is in a group - add child tab to same group
+    if (tab.openerTabId) {
+      const openerGroupId = getTabGroupId(tab.openerTabId);
+      if (openerGroupId) {
+        const group = items.find(item => item.group === openerGroupId);
+        if (group) {
+          if (settings.newTabPosition === 'top') {
+            group.tabs.unshift(tab.id);
+          } else {
+            group.tabs.push(tab.id);
+          }
+          await saveItems();
+          render();
+          return;
+        }
+      }
+    }
+
+    // Default: add to root level
     if (settings.newTabPosition === 'top') {
       items.unshift(tab.id);
     } else {
