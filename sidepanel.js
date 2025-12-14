@@ -302,12 +302,17 @@ function renderGroup(group, itemIndex) {
   header.innerHTML = `
     <span class="group-color-dot" style="background: ${group.color}"></span>
     <span class="group-name">${escapeHtml(group.name)}</span>
-    <span class="group-count">${group.tabs.length}</span>
+    <button class="group-close-btn" title="Close all tabs in group">&times;</button>
   `;
 
   header.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     showGroupContextMenu(e.clientX, e.clientY, group);
+  });
+
+  header.querySelector('.group-close-btn').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await chrome.tabs.remove(group.tabs);
   });
 
   container.appendChild(header);

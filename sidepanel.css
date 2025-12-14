@@ -264,10 +264,28 @@ footer {
   white-space: nowrap;
 }
 
-.group-count {
-  font-size: 11px;
+.group-close-btn {
+  opacity: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
   color: var(--text-secondary);
-  opacity: 0.7;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+
+.group-header:hover .group-close-btn {
+  opacity: 0.6;
+}
+
+.group-close-btn:hover {
+  opacity: 1 !important;
+  background: var(--hover-bg);
+  color: var(--text-color);
 }
 
 .group-tabs {
