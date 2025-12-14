@@ -15,6 +15,10 @@ let savedSessions = {};   // Saved session storage
 let currentView = 'tabs'; // Current view: 'tabs' or 'sessions'
 let restoringTabIds = new Set();  // Tab IDs being restored (skip in onCreated)
 
+// Debounce queue for tab removal (prevents race conditions when closing multiple tabs)
+let removeQueue = [];
+let removeTimeout = null;
+
 const GROUP_COLORS = [
   '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3',
   '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#ff9800', '#ff5722'
@@ -187,30 +191,12 @@ function setupEventListeners() {
     render();
   });
 
-  chrome.tabs.onRemoved.addListener(async (tabId) => {
-    delete tabData[tabId];
-    selectedTabs.delete(tabId);
-    if (keyboardFocusedTabId === tabId) {
-      keyboardFocusedTabId = null;
-    }
+  // Debounced removal handler - batches rapid tab closures to prevent race conditions
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    removeQueue.push(tabId);
 
-    // Remove from items or groups
-    items = items.filter(item => {
-      if (typeof item === 'number') {
-        return item !== tabId;
-      } else if (item.group) {
-        item.tabs = item.tabs.filter(id => id !== tabId);
-        return item.tabs.length > 0;
-      }
-      return false;
-    });
-
-    if (customNames[tabId]) {
-      delete customNames[tabId];
-      await chrome.storage.local.set({ customNames });
-    }
-    await saveItems();
-    render();
+    if (removeTimeout) clearTimeout(removeTimeout);
+    removeTimeout = setTimeout(processRemoveQueue, 50);
   });
 
   // Click outside to clear selection
@@ -220,6 +206,53 @@ function setupEventListeners() {
       render();
     }
   });
+}
+
+// Process batched tab removals - prevents race conditions with storage listener
+async function processRemoveQueue() {
+  if (removeQueue.length === 0) return;
+
+  const tabIds = [...removeQueue];
+  removeQueue = [];
+  removeTimeout = null;
+
+  const removedSet = new Set(tabIds);
+
+  // Clean up state for all removed tabs
+  tabIds.forEach(id => {
+    delete tabData[id];
+    selectedTabs.delete(id);
+    if (keyboardFocusedTabId === id) {
+      keyboardFocusedTabId = null;
+    }
+  });
+
+  // Single filter pass for all removed tabs
+  items = items.filter(item => {
+    if (typeof item === 'number') {
+      return !removedSet.has(item);
+    } else if (item.group) {
+      item.tabs = item.tabs.filter(id => !removedSet.has(id));
+      return item.tabs.length > 0;  // Remove empty groups
+    }
+    return false;
+  });
+
+  // Clean up custom names
+  let customNamesChanged = false;
+  tabIds.forEach(id => {
+    if (customNames[id]) {
+      delete customNames[id];
+      customNamesChanged = true;
+    }
+  });
+
+  if (customNamesChanged) {
+    await chrome.storage.local.set({ customNames });
+  }
+
+  await saveItems();
+  render();
 }
 
 function render() {
