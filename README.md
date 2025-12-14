@@ -51,6 +51,15 @@ Chrome's tab bar order changes when you use extensions like "Most Recent Used Ta
 - Groups have colored left borders and headers
 - Empty groups are automatically removed
 
+**Saved sessions:**
+- **Right-click group header → Save session** → save group for later
+- **Footer: Tabs / Sessions** → switch between views
+- **Click saved session** → restore all tabs and recreate group
+- **× button on session** → delete saved session
+- Sessions remember: group name, color, all tab URLs, custom tab names
+- Already-saved groups show "Update saved session" + "Save as new..."
+- Sessions persist across browser restarts
+
 ## How It Works
 
 ```

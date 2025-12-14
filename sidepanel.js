@@ -11,6 +11,8 @@ let selectedTabs = new Set();  // Currently selected tab IDs
 let lastClickedTab = null;     // For Shift+click range selection
 let sortableInstances = [];    // Track SortableJS instances
 let keyboardFocusedTabId = null;  // For keyboard navigation
+let savedSessions = {};   // Saved session storage
+let currentView = 'tabs'; // Current view: 'tabs' or 'sessions'
 
 const GROUP_COLORS = [
   '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3',
@@ -20,9 +22,10 @@ const GROUP_COLORS = [
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
-  const stored = await chrome.storage.local.get(['items', 'customNames']);
+  const stored = await chrome.storage.local.get(['items', 'customNames', 'savedSessions']);
   items = stored.items || [];
   customNames = stored.customNames || {};
+  savedSessions = stored.savedSessions || {};
 
   // Migration from old tabOrder format
   if (items.length === 0) {
@@ -43,6 +46,7 @@ async function init() {
   setupEventListeners();
   setupContextMenu();
   setupKeyboardNavigation();
+  setupViewToggle();
 }
 
 function extractTabData(tab) {
@@ -674,7 +678,18 @@ function showGroupContextMenu(x, y, group) {
   menu.id = 'context-menu';
   menu.className = 'context-menu';
 
+  const hasSavedSession = !!group.linkedSessionId;
+
   menu.innerHTML = `
+    <button class="context-menu-item" data-action="save-session">
+      ${hasSavedSession ? 'Update saved session' : 'Save session'}
+    </button>
+    ${hasSavedSession ? `
+    <button class="context-menu-item" data-action="save-as-new">
+      Save as new...
+    </button>
+    ` : ''}
+    <div class="context-menu-separator"></div>
     <button class="context-menu-item" data-action="rename-group">
       Rename group
     </button>
@@ -704,6 +719,12 @@ function showGroupContextMenu(x, y, group) {
     hideContextMenu();
 
     switch (action) {
+      case 'save-session':
+        await saveGroupAsSession(group);
+        break;
+      case 'save-as-new':
+        await saveGroupAsNewSession(group);
+        break;
       case 'rename-group':
         const newName = prompt('Enter group name:', group.name);
         if (newName && newName.trim()) {
@@ -848,4 +869,253 @@ function setupKeyboardNavigation() {
       await promptRename(keyboardFocusedTabId);
     }
   });
+}
+
+// View Toggle
+function setupViewToggle() {
+  const viewBtns = document.querySelectorAll('.view-btn');
+  viewBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const view = btn.dataset.view;
+      switchView(view);
+    });
+  });
+}
+
+function switchView(view) {
+  currentView = view;
+  const tabList = document.getElementById('tab-list');
+  const sessionsList = document.getElementById('sessions-list');
+  const viewBtns = document.querySelectorAll('.view-btn');
+
+  viewBtns.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === view);
+  });
+
+  if (view === 'tabs') {
+    tabList.classList.remove('hidden');
+    sessionsList.classList.add('hidden');
+  } else {
+    tabList.classList.add('hidden');
+    sessionsList.classList.remove('hidden');
+    renderSessions();
+  }
+}
+
+// Sessions Management
+async function saveGroupAsSession(group) {
+  const sessionId = group.linkedSessionId || crypto.randomUUID();
+  const isUpdate = !!group.linkedSessionId;
+
+  // Capture current tab data
+  const sessionTabs = group.tabs.map(tabId => {
+    const data = tabData[tabId];
+    return {
+      url: data?.url || '',
+      title: data?.title || 'Unknown',
+      customName: customNames[tabId] || null
+    };
+  }).filter(t => t.url); // Only save tabs with valid URLs
+
+  const session = {
+    id: sessionId,
+    name: group.name,
+    color: group.color,
+    createdAt: isUpdate ? (savedSessions[sessionId]?.createdAt || Date.now()) : Date.now(),
+    updatedAt: Date.now(),
+    tabs: sessionTabs
+  };
+
+  savedSessions[sessionId] = session;
+  await chrome.storage.local.set({ savedSessions });
+
+  // Link group to session
+  group.linkedSessionId = sessionId;
+  await saveItems();
+  render();
+}
+
+async function saveGroupAsNewSession(group) {
+  const name = prompt('Enter session name:', group.name);
+  if (!name || !name.trim()) return;
+
+  const sessionId = crypto.randomUUID();
+
+  // Capture current tab data
+  const sessionTabs = group.tabs.map(tabId => {
+    const data = tabData[tabId];
+    return {
+      url: data?.url || '',
+      title: data?.title || 'Unknown',
+      customName: customNames[tabId] || null
+    };
+  }).filter(t => t.url);
+
+  const session = {
+    id: sessionId,
+    name: name.trim(),
+    color: group.color,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    tabs: sessionTabs
+  };
+
+  savedSessions[sessionId] = session;
+  await chrome.storage.local.set({ savedSessions });
+
+  // Update group to link to new session
+  group.linkedSessionId = sessionId;
+  await saveItems();
+  render();
+}
+
+async function restoreSession(sessionId) {
+  const session = savedSessions[sessionId];
+  if (!session || session.tabs.length === 0) return;
+
+  const BATCH_SIZE = 5;
+  const BATCH_DELAY = 150;
+  const createdTabIds = [];
+  const newCustomNames = {};
+
+  // Create tabs in batches
+  for (let i = 0; i < session.tabs.length; i += BATCH_SIZE) {
+    const batch = session.tabs.slice(i, i + BATCH_SIZE);
+
+    const results = await Promise.allSettled(
+      batch.map(tab =>
+        chrome.tabs.create({
+          url: tab.url,
+          active: false
+        })
+      )
+    );
+
+    results.forEach((result, idx) => {
+      if (result.status === 'fulfilled') {
+        const newTabId = result.value.id;
+        createdTabIds.push(newTabId);
+        tabData[newTabId] = extractTabData(result.value);
+
+        // Store custom name if exists
+        if (batch[idx].customName) {
+          newCustomNames[newTabId] = batch[idx].customName;
+        }
+      }
+    });
+
+    // Delay between batches
+    if (i + BATCH_SIZE < session.tabs.length) {
+      await new Promise(r => setTimeout(r, BATCH_DELAY));
+    }
+  }
+
+  if (createdTabIds.length === 0) return;
+
+  // Create group with restored tabs
+  const group = {
+    group: generateGroupId(),
+    name: session.name,
+    color: session.color,
+    tabs: createdTabIds,
+    linkedSessionId: sessionId
+  };
+
+  items.push(group);
+
+  // Save custom names
+  if (Object.keys(newCustomNames).length > 0) {
+    Object.assign(customNames, newCustomNames);
+    await chrome.storage.local.set({ customNames });
+  }
+
+  await saveItems();
+
+  // Switch to tabs view
+  switchView('tabs');
+
+  // Activate first restored tab
+  if (createdTabIds.length > 0) {
+    await chrome.tabs.update(createdTabIds[0], { active: true });
+  }
+}
+
+async function deleteSession(sessionId) {
+  if (!confirm('Delete this saved session?')) return;
+
+  delete savedSessions[sessionId];
+  await chrome.storage.local.set({ savedSessions });
+
+  // Clear linkedSessionId from any groups that reference this session
+  let needsSave = false;
+  items.forEach(item => {
+    if (item.group && item.linkedSessionId === sessionId) {
+      delete item.linkedSessionId;
+      needsSave = true;
+    }
+  });
+
+  if (needsSave) {
+    await saveItems();
+  }
+
+  renderSessions();
+}
+
+function renderSessions() {
+  const sessionsList = document.getElementById('sessions-list');
+
+  // Sort by updatedAt descending
+  const sortedSessions = Object.values(savedSessions)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+
+  if (sortedSessions.length === 0) {
+    sessionsList.innerHTML = `
+      <div class="sessions-empty">
+        <p>No saved sessions yet</p>
+        <p>Right-click a group header → Save session</p>
+      </div>
+    `;
+    return;
+  }
+
+  sessionsList.innerHTML = sortedSessions.map(session => {
+    const date = formatDate(session.updatedAt);
+    return `
+      <div class="session-item" data-session-id="${session.id}">
+        <span class="session-color" style="background: ${session.color}"></span>
+        <div class="session-info">
+          <span class="session-name">${escapeHtml(session.name)}</span>
+          <span class="session-meta">${session.tabs.length} tabs • ${date}</span>
+        </div>
+        <button class="session-delete" title="Delete session">&times;</button>
+      </div>
+    `;
+  }).join('');
+
+  // Add click handlers
+  sessionsList.querySelectorAll('.session-item').forEach(item => {
+    const sessionId = item.dataset.sessionId;
+
+    item.addEventListener('click', (e) => {
+      if (e.target.classList.contains('session-delete')) {
+        e.stopPropagation();
+        deleteSession(sessionId);
+      } else {
+        restoreSession(sessionId);
+      }
+    });
+  });
+}
+
+function formatDate(timestamp) {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }

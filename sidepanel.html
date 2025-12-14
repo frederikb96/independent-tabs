@@ -21,8 +21,17 @@
     <!-- Tab items will be rendered here by JavaScript -->
   </main>
 
+  <main id="sessions-list" class="hidden">
+    <!-- Saved sessions will be rendered here by JavaScript -->
+  </main>
+
   <footer>
-    <small id="tab-count">0 tabs</small>
+    <div class="view-toggle">
+      <button class="view-btn active" data-view="tabs">
+        Tabs <span id="tab-count">0</span>
+      </button>
+      <button class="view-btn" data-view="sessions">Sessions</button>
+    </div>
   </footer>
 
   <script src="sortable.min.js"></script>
