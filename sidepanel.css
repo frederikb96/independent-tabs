@@ -1,0 +1,196 @@
+/* Independent Tabs - Side Panel Styles */
+
+:root {
+  --bg-color: #ffffff;
+  --text-color: #333333;
+  --text-secondary: #666666;
+  --hover-bg: #f5f5f5;
+  --active-bg: #e3f2fd;
+  --border-color: #e0e0e0;
+  --accent-color: #1976d2;
+  --drop-indicator: #1976d2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-color: #1e1e1e;
+    --text-color: #e0e0e0;
+    --text-secondary: #999999;
+    --hover-bg: #2d2d2d;
+    --active-bg: #1e3a5f;
+    --border-color: #404040;
+    --accent-color: #64b5f6;
+    --drop-indicator: #64b5f6;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-size: 13px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+/* Header */
+header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+header h1 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+#settings-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+#settings-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text-color);
+}
+
+/* Tab List */
+#tab-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 8px;
+}
+
+/* Tab Item */
+.tab-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  gap: 10px;
+  transition: background 0.1s;
+  position: relative;
+}
+
+.tab-item:hover {
+  background: var(--hover-bg);
+}
+
+.tab-item.active {
+  background: var(--active-bg);
+}
+
+.tab-item.dragging {
+  opacity: 0.4;
+}
+
+/* Drop indicators */
+.tab-item.drop-above::before,
+.tab-item.drop-below::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--drop-indicator);
+  border-radius: 1px;
+}
+
+.tab-item.drop-above::before {
+  top: -1px;
+}
+
+.tab-item.drop-below::after {
+  bottom: -1px;
+}
+
+/* Favicon */
+.favicon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 2px;
+}
+
+/* Title */
+.title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Close Button */
+.close-btn {
+  opacity: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+
+.tab-item:hover .close-btn {
+  opacity: 0.6;
+}
+
+.close-btn:hover {
+  opacity: 1 !important;
+  background: var(--hover-bg);
+  color: var(--text-color);
+}
+
+/* Footer */
+footer {
+  padding: 8px 16px;
+  border-top: 1px solid var(--border-color);
+  text-align: center;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+/* Scrollbar styling */
+#tab-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+#tab-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#tab-list::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+#tab-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}

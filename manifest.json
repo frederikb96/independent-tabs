@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Independent Tabs",
+  "version": "1.0.0",
+  "description": "A side panel showing tabs in your own custom order, independent from Chrome's tab bar.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": [
+    "sidePanel",
+    "tabs",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Open Independent Tabs"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
+  "minimum_chrome_version": "114"
+}
