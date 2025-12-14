@@ -311,6 +311,7 @@ async function processAutosaveQueue() {
       ...existingSession,
       name: group.name,
       color: group.color,
+      autoSave: group.autoSave || false,  // Keep autoSave state in sync
       updatedAt: Date.now(),
       tabs: sessionTabs
     };
@@ -1087,10 +1088,17 @@ async function saveGroupAsSession(group) {
     };
   }).filter(t => t.url); // Only save tabs with valid URLs
 
+  // Set autoSave based on settings for new saves
+  if (!isUpdate && group.autoSave === undefined) {
+    const { settings = {} } = await chrome.storage.local.get('settings');
+    group.autoSave = settings.defaultAutoSave || false;
+  }
+
   const session = {
     id: sessionId,
     name: group.name,
     color: group.color,
+    autoSave: group.autoSave || false,  // Persist autoSave state in session
     createdAt: isUpdate ? (savedSessions[sessionId]?.createdAt || Date.now()) : Date.now(),
     updatedAt: Date.now(),
     tabs: sessionTabs
@@ -1099,12 +1107,8 @@ async function saveGroupAsSession(group) {
   savedSessions[sessionId] = session;
   await chrome.storage.local.set({ savedSessions });
 
-  // Link group to session and set autoSave based on settings (only for new saves)
+  // Link group to session
   group.linkedSessionId = sessionId;
-  if (!isUpdate && group.autoSave === undefined) {
-    const { settings = {} } = await chrome.storage.local.get('settings');
-    group.autoSave = settings.defaultAutoSave || false;
-  }
   await saveItems();
   render();
 }
@@ -1114,6 +1118,10 @@ async function saveGroupAsNewSession(group) {
   if (!name || !name.trim()) return;
 
   const sessionId = crypto.randomUUID();
+
+  // Set autoSave based on settings
+  const { settings = {} } = await chrome.storage.local.get('settings');
+  const autoSaveValue = settings.defaultAutoSave || false;
 
   // Capture current tab data
   const sessionTabs = group.tabs.map(tabId => {
@@ -1129,6 +1137,7 @@ async function saveGroupAsNewSession(group) {
     id: sessionId,
     name: name.trim(),
     color: group.color,
+    autoSave: autoSaveValue,  // Persist autoSave state in session
     createdAt: Date.now(),
     updatedAt: Date.now(),
     tabs: sessionTabs
@@ -1137,10 +1146,9 @@ async function saveGroupAsNewSession(group) {
   savedSessions[sessionId] = session;
   await chrome.storage.local.set({ savedSessions });
 
-  // Update group to link to new session and set autoSave based on settings
+  // Update group to link to new session
   group.linkedSessionId = sessionId;
-  const { settings = {} } = await chrome.storage.local.get('settings');
-  group.autoSave = settings.defaultAutoSave || false;
+  group.autoSave = autoSaveValue;
   await saveItems();
   render();
 }
@@ -1148,6 +1156,36 @@ async function saveGroupAsNewSession(group) {
 async function restoreSession(sessionId) {
   const session = savedSessions[sessionId];
   if (!session || session.tabs.length === 0) return;
+
+  // Option A: Check if a group already exists linked to this session
+  const existingGroup = items.find(item => item.group && item.linkedSessionId === sessionId);
+  if (existingGroup) {
+    // Switch to tabs view and focus the existing group
+    switchView('tabs');
+
+    // Focus first tab in the group
+    if (existingGroup.tabs.length > 0) {
+      const firstTabId = existingGroup.tabs[0];
+      const tabInfo = tabData[firstTabId];
+      if (tabInfo) {
+        await chrome.tabs.update(firstTabId, { active: true });
+        await chrome.windows.update(tabInfo.windowId, { focused: true });
+      }
+      keyboardFocusedTabId = firstTabId;
+    }
+
+    render();
+
+    // Scroll to the group
+    setTimeout(() => {
+      const groupEl = document.querySelector(`[data-group-id="${existingGroup.group}"]`);
+      if (groupEl) {
+        groupEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    }, 50);
+
+    return;
+  }
 
   const BATCH_SIZE = 5;
   const BATCH_DELAY = 150;
@@ -1194,6 +1232,7 @@ async function restoreSession(sessionId) {
     group: generateGroupId(),
     name: session.name,
     color: session.color,
+    autoSave: session.autoSave || false,  // Restore autoSave state from session
     tabs: createdTabIds,
     linkedSessionId: sessionId
   };
