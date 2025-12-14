@@ -1012,6 +1012,9 @@ async function restoreSession(sessionId) {
 
   if (createdTabIds.length === 0) return;
 
+  // Remove tabs from items (onCreated listener added them as ungrouped)
+  createdTabIds.forEach(tabId => removeTabFromItems(tabId));
+
   // Create group with restored tabs
   const group = {
     group: generateGroupId(),
