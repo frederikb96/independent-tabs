@@ -1019,20 +1019,19 @@ function setupKeyboardNavigation() {
         lastClickedTab = newTabId;
         selectedTabs.clear();
 
-        // Focus the tab in Chrome
-        const data = tabData[newTabId];
-        if (data) {
-          await chrome.tabs.update(newTabId, { active: true });
-          await chrome.windows.update(data.windowId, { focused: true });
-        }
+        // Focus the tab in Chrome (don't focus window - causes focus steal from side panel)
+        await chrome.tabs.update(newTabId, { active: true });
 
         render();
 
-        // Scroll the focused tab into view
+        // Scroll the focused tab into view and keep focus in side panel
         const focusedEl = document.querySelector(`.tab-item[data-tab-id="${newTabId}"]`);
         if (focusedEl) {
           focusedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }
+
+        // Re-focus the tab list to maintain keyboard control
+        document.getElementById('tab-list').focus();
       }
     } else if (e.key === ' ' && keyboardFocusedTabId !== null) {
       // Space bar - open rename prompt

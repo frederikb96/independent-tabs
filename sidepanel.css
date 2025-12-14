@@ -84,6 +84,7 @@ header h1 {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 4px 8px;
+  outline: none;  /* Hide focus outline - we use our own visual indicator */
 }
 
 /* Tab Item */
