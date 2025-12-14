@@ -116,6 +116,11 @@ header h1 {
   box-shadow: inset 3px 0 0 var(--accent-color);
 }
 
+.tab-item.keyboard-focused {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -2px;
+}
+
 /* Favicon */
 .favicon {
   width: 16px;

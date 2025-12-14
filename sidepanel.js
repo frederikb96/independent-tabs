@@ -10,6 +10,7 @@ let customNames = {};     // Custom tab names
 let selectedTabs = new Set();  // Currently selected tab IDs
 let lastClickedTab = null;     // For Shift+click range selection
 let sortableInstances = [];    // Track SortableJS instances
+let keyboardFocusedTabId = null;  // For keyboard navigation
 
 const GROUP_COLORS = [
   '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3',
@@ -41,6 +42,7 @@ async function init() {
   render();
   setupEventListeners();
   setupContextMenu();
+  setupKeyboardNavigation();
 }
 
 function extractTabData(tab) {
@@ -127,6 +129,7 @@ function setupEventListeners() {
     Object.keys(tabData).forEach(id => {
       tabData[id].active = (parseInt(id) === tabId);
     });
+    keyboardFocusedTabId = tabId;
     render();
   });
 
@@ -156,6 +159,9 @@ function setupEventListeners() {
   chrome.tabs.onRemoved.addListener(async (tabId) => {
     delete tabData[tabId];
     selectedTabs.delete(tabId);
+    if (keyboardFocusedTabId === tabId) {
+      keyboardFocusedTabId = null;
+    }
 
     // Remove from items or groups
     items = items.filter(item => {
@@ -226,6 +232,7 @@ function renderTab(tabId) {
   item.className = 'tab-item';
   if (data.active) item.classList.add('active');
   if (selectedTabs.has(tabId)) item.classList.add('selected');
+  if (keyboardFocusedTabId === tabId) item.classList.add('keyboard-focused');
   item.dataset.tabId = tabId;
 
   const faviconSrc = data.favIconUrl || `chrome-extension://${chrome.runtime.id}/icons/icon-16.png`;
@@ -326,6 +333,7 @@ function handleTabClick(e, tabId, data) {
     // Normal click - focus tab
     selectedTabs.clear();
     lastClickedTab = tabId;
+    keyboardFocusedTabId = tabId;
     chrome.tabs.update(tabId, { active: true });
     chrome.windows.update(data.windowId, { focused: true });
   }
@@ -784,4 +792,60 @@ async function promptRename(tabId) {
     await chrome.storage.local.set({ customNames });
     render();
   }
+}
+
+// Keyboard Navigation
+function setupKeyboardNavigation() {
+  document.addEventListener('keydown', async (e) => {
+    // Ignore if typing in input/textarea
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    // Ignore if context menu is open
+    if (document.getElementById('context-menu')) return;
+
+    const allTabIds = getAllTabIds();
+    if (allTabIds.length === 0) return;
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+
+      let currentIndex = keyboardFocusedTabId !== null
+        ? allTabIds.indexOf(keyboardFocusedTabId)
+        : -1;
+
+      if (e.key === 'ArrowDown') {
+        // Move down (or start at first tab)
+        currentIndex = currentIndex < allTabIds.length - 1 ? currentIndex + 1 : currentIndex;
+      } else {
+        // Move up (or start at last tab)
+        currentIndex = currentIndex > 0 ? currentIndex - 1 : (currentIndex === -1 ? allTabIds.length - 1 : currentIndex);
+      }
+
+      const newTabId = allTabIds[currentIndex];
+      if (newTabId !== undefined) {
+        keyboardFocusedTabId = newTabId;
+        lastClickedTab = newTabId;
+        selectedTabs.clear();
+
+        // Focus the tab in Chrome
+        const data = tabData[newTabId];
+        if (data) {
+          await chrome.tabs.update(newTabId, { active: true });
+          await chrome.windows.update(data.windowId, { focused: true });
+        }
+
+        render();
+
+        // Scroll the focused tab into view
+        const focusedEl = document.querySelector(`.tab-item[data-tab-id="${newTabId}"]`);
+        if (focusedEl) {
+          focusedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
+    } else if (e.key === ' ' && keyboardFocusedTabId !== null) {
+      // Space bar - open rename prompt
+      e.preventDefault();
+      await promptRename(keyboardFocusedTabId);
+    }
+  });
 }

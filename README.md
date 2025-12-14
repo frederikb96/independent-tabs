@@ -25,6 +25,11 @@ Chrome's tab bar order changes when you use extensions like "Most Recent Used Ta
 - **Alt+Shift+T** → toggle side panel open/closed
 - **Settings (gear icon)** → choose whether new tabs appear at top or bottom
 
+**Keyboard navigation:**
+- **Arrow Down/Up** → navigate through tabs (switches to that tab)
+- **Space** → open rename prompt for current tab
+- Navigation skips group headers, only tabs are navigable
+
 **Tab renaming (right-click menu):**
 - **Rename tab** → give any tab a custom name
 - Custom names shown in *italic* with accent color
