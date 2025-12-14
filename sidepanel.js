@@ -312,7 +312,7 @@ function renderGroup(group, itemIndex) {
 
   header.querySelector('.group-close-btn').addEventListener('click', async (e) => {
     e.stopPropagation();
-    await chrome.tabs.remove(group.tabs);
+    await chrome.tabs.remove([...group.tabs]);  // Copy array to avoid mutation issues
   });
 
   container.appendChild(header);
@@ -772,7 +772,7 @@ function showGroupContextMenu(x, y, group) {
         await dissolveGroup(group.group);
         break;
       case 'close-group':
-        await chrome.tabs.remove(group.tabs);
+        await chrome.tabs.remove([...group.tabs]);
         break;
     }
   });
