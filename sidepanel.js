@@ -1000,9 +1000,15 @@ async function handleGlobalNavigation(direction) {
   const allTabIds = getAllTabIds();
   if (allTabIds.length === 0) return;
 
-  let currentIndex = keyboardFocusedTabId !== null
-    ? allTabIds.indexOf(keyboardFocusedTabId)
-    : -1;
+  // If no keyboard focus yet, start from the currently active tab
+  let currentIndex;
+  if (keyboardFocusedTabId !== null && allTabIds.includes(keyboardFocusedTabId)) {
+    currentIndex = allTabIds.indexOf(keyboardFocusedTabId);
+  } else {
+    // Find the currently active tab
+    const activeTabId = Object.keys(tabData).find(id => tabData[id].active);
+    currentIndex = activeTabId ? allTabIds.indexOf(parseInt(activeTabId)) : -1;
+  }
 
   if (direction === 'down') {
     currentIndex = currentIndex < allTabIds.length - 1 ? currentIndex + 1 : currentIndex;
@@ -1041,9 +1047,14 @@ function setupKeyboardNavigation() {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
 
-      let currentIndex = keyboardFocusedTabId !== null
-        ? allTabIds.indexOf(keyboardFocusedTabId)
-        : -1;
+      // If no keyboard focus yet, start from the currently active tab
+      let currentIndex;
+      if (keyboardFocusedTabId !== null && allTabIds.includes(keyboardFocusedTabId)) {
+        currentIndex = allTabIds.indexOf(keyboardFocusedTabId);
+      } else {
+        const activeTabId = Object.keys(tabData).find(id => tabData[id].active);
+        currentIndex = activeTabId ? allTabIds.indexOf(parseInt(activeTabId)) : -1;
+      }
 
       if (e.key === 'ArrowDown') {
         // Move down (or start at first tab)
