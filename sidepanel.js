@@ -13,6 +13,7 @@ let sortableInstances = [];    // Track SortableJS instances
 let keyboardFocusedTabId = null;  // For keyboard navigation
 let savedSessions = {};   // Saved session storage
 let currentView = 'tabs'; // Current view: 'tabs' or 'sessions'
+let restoringTabIds = new Set();  // Tab IDs being restored (skip in onCreated)
 
 const GROUP_COLORS = [
   '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3',
@@ -151,6 +152,13 @@ function setupEventListeners() {
   chrome.tabs.onCreated.addListener(async (tab) => {
     tabData[tab.id] = extractTabData(tab);
     const { settings = { newTabPosition: 'bottom' } } = await chrome.storage.local.get('settings');
+
+    // Check AFTER await - by now restoringTabIds will be populated if this is a restore
+    if (restoringTabIds.has(tab.id)) {
+      restoringTabIds.delete(tab.id);  // Clean up
+      return;
+    }
+
     if (settings.newTabPosition === 'top') {
       items.unshift(tab.id);
     } else {
@@ -994,6 +1002,7 @@ async function restoreSession(sessionId) {
     results.forEach((result, idx) => {
       if (result.status === 'fulfilled') {
         const newTabId = result.value.id;
+        restoringTabIds.add(newTabId);  // Mark IMMEDIATELY so onCreated skips it
         createdTabIds.push(newTabId);
         tabData[newTabId] = extractTabData(result.value);
 
@@ -1012,10 +1021,7 @@ async function restoreSession(sessionId) {
 
   if (createdTabIds.length === 0) return;
 
-  // Remove tabs from items (onCreated listener added them as ungrouped)
-  createdTabIds.forEach(tabId => removeTabFromItems(tabId));
-
-  // Create group with restored tabs
+  // Create group with restored tabs (onCreated skipped adding these due to restoringTabIds)
   const group = {
     group: generateGroupId(),
     name: session.name,
