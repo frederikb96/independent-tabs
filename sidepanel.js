@@ -2,15 +2,17 @@
 
 let tabOrder = [];
 let tabData = {};
+let customNames = {};  // Custom tab names that override Chrome's title
 let draggedTabId = null;
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
-  // Load saved order
-  const stored = await chrome.storage.local.get('tabOrder');
+  // Load saved order and custom names
+  const stored = await chrome.storage.local.get(['tabOrder', 'customNames']);
   tabOrder = stored.tabOrder || [];
+  customNames = stored.customNames || {};
 
   // Get current tabs and their data
   const tabs = await chrome.tabs.query({ currentWindow: true });
@@ -28,6 +30,7 @@ async function init() {
   render();
   setupEventListeners();
   setupDragDrop();
+  setupContextMenu();
 }
 
 function extractTabData(tab) {
@@ -53,6 +56,8 @@ function setupEventListeners() {
 
   // Storage change listener (for updates from service worker)
   chrome.storage.local.onChanged.addListener(async (changes) => {
+    let needsRender = false;
+
     if (changes.tabOrder) {
       tabOrder = changes.tabOrder.newValue || [];
       // Refresh tab data for any new tabs
@@ -60,8 +65,15 @@ function setupEventListeners() {
       tabs.forEach(tab => {
         tabData[tab.id] = extractTabData(tab);
       });
-      render();
+      needsRender = true;
     }
+
+    if (changes.customNames) {
+      customNames = changes.customNames.newValue || {};
+      needsRender = true;
+    }
+
+    if (needsRender) render();
   });
 
   // Tab activated (focus changed)
@@ -85,10 +97,15 @@ function setupEventListeners() {
   });
 
   // Tab removed (cleanup local data)
-  chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.tabs.onRemoved.addListener(async (tabId) => {
     delete tabData[tabId];
     // Service worker handles storage update, but we can update local state
     tabOrder = tabOrder.filter(id => id !== tabId);
+    // Also remove any custom name for this tab
+    if (customNames[tabId]) {
+      delete customNames[tabId];
+      await chrome.storage.local.set({ customNames });
+    }
     render();
   });
 }
@@ -207,9 +224,13 @@ function render() {
     // Favicon with fallback
     const faviconSrc = data.favIconUrl || `chrome-extension://${chrome.runtime.id}/icons/icon-16.png`;
 
+    // Use custom name if set, otherwise Chrome's title
+    const displayTitle = customNames[tabId] || data.title;
+    const hasCustomName = !!customNames[tabId];
+
     item.innerHTML = `
       <img class="favicon" src="${escapeAttr(faviconSrc)}" alt="" draggable="false">
-      <span class="title" title="${escapeAttr(data.title)}">${escapeHtml(data.title)}</span>
+      <span class="title${hasCustomName ? ' custom-name' : ''}" title="${escapeAttr(data.title)}">${escapeHtml(displayTitle)}</span>
       <button class="close-btn" title="Close tab" aria-label="Close tab">&times;</button>
     `;
 
@@ -246,4 +267,99 @@ function escapeHtml(text) {
 
 function escapeAttr(text) {
   return (text || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Context menu for tab renaming
+function setupContextMenu() {
+  const tabList = document.getElementById('tab-list');
+
+  tabList.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const tabItem = e.target.closest('.tab-item');
+    if (!tabItem) return;
+
+    const tabId = parseInt(tabItem.dataset.tabId);
+    showContextMenu(e.clientX, e.clientY, tabId);
+  });
+
+  // Close context menu on click outside
+  document.addEventListener('click', hideContextMenu);
+}
+
+function showContextMenu(x, y, tabId) {
+  // Remove existing menu
+  hideContextMenu();
+
+  const menu = document.createElement('div');
+  menu.id = 'context-menu';
+  menu.className = 'context-menu';
+
+  const data = tabData[tabId];
+  const hasCustomName = !!customNames[tabId];
+
+  menu.innerHTML = `
+    <button class="context-menu-item" data-action="rename">
+      ${hasCustomName ? 'Edit name' : 'Rename tab'}
+    </button>
+    ${hasCustomName ? `
+    <button class="context-menu-item" data-action="reset">
+      Reset to original
+    </button>
+    ` : ''}
+    <button class="context-menu-item" data-action="close">
+      Close tab
+    </button>
+  `;
+
+  // Position menu
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+
+  document.body.appendChild(menu);
+
+  // Adjust if menu goes off screen
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) {
+    menu.style.left = `${window.innerWidth - rect.width - 5}px`;
+  }
+  if (rect.bottom > window.innerHeight) {
+    menu.style.top = `${window.innerHeight - rect.height - 5}px`;
+  }
+
+  // Handle menu clicks
+  menu.addEventListener('click', async (e) => {
+    const action = e.target.dataset.action;
+    if (!action) return;
+
+    hideContextMenu();
+
+    if (action === 'rename') {
+      await promptRename(tabId);
+    } else if (action === 'reset') {
+      delete customNames[tabId];
+      await chrome.storage.local.set({ customNames });
+      render();
+    } else if (action === 'close') {
+      await chrome.tabs.remove(tabId);
+    }
+  });
+}
+
+function hideContextMenu() {
+  const menu = document.getElementById('context-menu');
+  if (menu) menu.remove();
+}
+
+async function promptRename(tabId) {
+  const data = tabData[tabId];
+  if (!data) return;
+
+  const currentName = customNames[tabId] || data.title;
+  const newName = prompt('Enter custom name for this tab:', currentName);
+
+  if (newName !== null && newName.trim() !== '') {
+    customNames[tabId] = newName.trim();
+    await chrome.storage.local.set({ customNames });
+    render();
+  }
 }
