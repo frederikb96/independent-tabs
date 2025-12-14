@@ -94,10 +94,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         `- ${customNameCount} custom tab names\n\n` +
         `Continue?`;
 
-      if (!confirm(confirmMsg)) {
+      console.log('About to show confirm dialog');
+      const confirmed = confirm(confirmMsg);
+      console.log('Confirm result:', confirmed);
+
+      if (!confirmed) {
+        console.log('User cancelled');
         importFile.value = '';
         return;
       }
+
+      console.log('User confirmed, starting restore...');
 
       // Restore data
       await chrome.storage.local.clear();
