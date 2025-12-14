@@ -47,3 +47,19 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
 // NOTE: We intentionally DO NOT listen to chrome.tabs.onMoved
 // This is the key feature - our order is independent from Chrome's tab bar order!
+
+// Handle keyboard shortcuts (works regardless of focus)
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command === 'navigate-up' || command === 'navigate-down') {
+    // Send message to side panel to handle navigation
+    // The side panel knows the current tab order and focused tab
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'navigate',
+        direction: command === 'navigate-up' ? 'up' : 'down'
+      });
+    } catch (e) {
+      // Side panel might not be open - that's okay
+    }
+  }
+});

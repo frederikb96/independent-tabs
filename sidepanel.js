@@ -123,6 +123,13 @@ function setupEventListeners() {
     chrome.runtime.openOptionsPage();
   });
 
+  // Listen for global keyboard shortcut navigation (works regardless of focus)
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'navigate') {
+      handleGlobalNavigation(message.direction);
+    }
+  });
+
   chrome.storage.local.onChanged.addListener(async (changes) => {
     if (changes.items) {
       items = changes.items.newValue || [];
@@ -988,7 +995,38 @@ async function promptRename(tabId) {
   }
 }
 
-// Keyboard Navigation
+// Global keyboard shortcut navigation (called from service worker via message)
+async function handleGlobalNavigation(direction) {
+  const allTabIds = getAllTabIds();
+  if (allTabIds.length === 0) return;
+
+  let currentIndex = keyboardFocusedTabId !== null
+    ? allTabIds.indexOf(keyboardFocusedTabId)
+    : -1;
+
+  if (direction === 'down') {
+    currentIndex = currentIndex < allTabIds.length - 1 ? currentIndex + 1 : currentIndex;
+  } else {
+    currentIndex = currentIndex > 0 ? currentIndex - 1 : (currentIndex === -1 ? allTabIds.length - 1 : currentIndex);
+  }
+
+  const newTabId = allTabIds[currentIndex];
+  if (newTabId !== undefined) {
+    keyboardFocusedTabId = newTabId;
+    lastClickedTab = newTabId;
+    selectedTabs.clear();
+
+    await chrome.tabs.update(newTabId, { active: true });
+    render();
+
+    const focusedEl = document.querySelector(`.tab-item[data-tab-id="${newTabId}"]`);
+    if (focusedEl) {
+      focusedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+}
+
+// Keyboard Navigation (when side panel has focus)
 function setupKeyboardNavigation() {
   document.addEventListener('keydown', async (e) => {
     // Ignore if typing in input/textarea
