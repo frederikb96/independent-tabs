@@ -18,12 +18,33 @@ Chrome's tab bar order changes when you use extensions like "Most Recent Used Ta
 
 ## Usage
 
+**Basic actions:**
 - **Click a tab** → focuses it in Chrome
 - **Drag tabs** → reorder in your custom arrangement
 - **× button** → closes the tab
+- **Alt+Shift+T** → toggle side panel open/closed
 - **Settings (gear icon)** → choose whether new tabs appear at top or bottom
 
-Your custom order persists across browser restarts.
+**Tab renaming (right-click menu):**
+- **Rename tab** → give any tab a custom name
+- Custom names shown in *italic* with accent color
+- Names persist until tab is closed
+- **Reset to original** → restore Chrome's title
+
+**Multi-select:**
+- **Ctrl+click** → toggle individual tab selection
+- **Shift+click** → select range of tabs
+- Selected tabs highlighted with accent border
+
+**Tab groups:**
+- **Right-click → Create group** → create a group from one tab
+- **Select multiple → Right-click → Group N tabs** → group selected tabs
+- **Drag tab into group** → automatically joins the group
+- **Drag tab out of group** → automatically leaves the group
+- **Drag group header** → move entire group with all tabs
+- **Right-click group header** → Rename, Change color, Ungroup all, Close all
+- Groups have colored left borders and headers
+- Empty groups are automatically removed
 
 ## How It Works
 
@@ -34,15 +55,16 @@ Tab reordered  → (ignored) your order stays the same
 You drag tabs  → your order updates, Chrome's tab bar unchanged
 ```
 
-The extension stores its own `tabOrder` array in `chrome.storage.local`, completely separate from Chrome's internal tab indices.
+The extension stores its own data in `chrome.storage.local`, completely separate from Chrome's internal tab indices.
 
 ## Files
 
 ```
 manifest.json       Manifest V3 config (requires Chrome 114+)
-service-worker.js   Handles tab create/remove events → updates storage
-sidepanel.html/js   UI rendering, drag-drop, tab actions
+service-worker.js   Extension initialization
+sidepanel.html/js   UI rendering, drag-drop with SortableJS, groups
 sidepanel.css       Styling with automatic dark mode support
+sortable.min.js     SortableJS library for drag-drop
 options.html/js     Settings page
 ```
 
@@ -50,6 +72,10 @@ options.html/js     Settings page
 
 - Chrome 114+ (Side Panel API requirement)
 - Permissions: `sidePanel`, `tabs`, `storage`
+
+## Note on Side Panel Width
+
+Side panel minimum width (~320px) is controlled by Chrome's browser settings, not by extension APIs. This is a browser-level constraint that cannot be changed.
 
 ## License
 
