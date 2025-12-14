@@ -150,10 +150,17 @@ function setupEventListeners() {
     if (tabData[tabId]) {
       if (changeInfo.title) tabData[tabId].title = changeInfo.title;
       if (changeInfo.favIconUrl) tabData[tabId].favIconUrl = changeInfo.favIconUrl;
+      if (changeInfo.url) tabData[tabId].url = changeInfo.url;
       if (changeInfo.status === 'complete') {
         tabData[tabId] = extractTabData(tab);
       }
       render();
+
+      // Trigger autosave on URL change (navigation within tab)
+      if (changeInfo.url) {
+        const groupId = getTabGroupId(tabId);
+        if (groupId) queueAutosave(groupId);
+      }
     }
   });
 
