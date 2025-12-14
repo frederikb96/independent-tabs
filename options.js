@@ -2,6 +2,7 @@
 
 document.addEventListener('DOMContentLoaded', async () => {
   const positionSelect = document.getElementById('position');
+  const defaultAutosaveCheckbox = document.getElementById('default-autosave');
   const savedIndicator = document.getElementById('saved');
   const exportBtn = document.getElementById('export-btn');
   const importBtn = document.getElementById('import-btn');
@@ -9,14 +10,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   const errorDiv = document.getElementById('error');
 
   // Load current settings
-  const { settings = { newTabPosition: 'bottom' } } = await chrome.storage.local.get('settings');
-  positionSelect.value = settings.newTabPosition;
+  const { settings = { newTabPosition: 'bottom', defaultAutoSave: false } } = await chrome.storage.local.get('settings');
+  positionSelect.value = settings.newTabPosition || 'bottom';
+  defaultAutosaveCheckbox.checked = settings.defaultAutoSave || false;
+
+  // Save settings helper
+  async function saveSettings(updates) {
+    const { settings: current = {} } = await chrome.storage.local.get('settings');
+    const newSettings = { ...current, ...updates };
+    await chrome.storage.local.set({ settings: newSettings });
+    showSaved();
+  }
 
   // Save on change
   positionSelect.addEventListener('change', async (e) => {
-    const newSettings = { newTabPosition: e.target.value };
-    await chrome.storage.local.set({ settings: newSettings });
-    showSaved();
+    await saveSettings({ newTabPosition: e.target.value });
+  });
+
+  defaultAutosaveCheckbox.addEventListener('change', async (e) => {
+    await saveSettings({ defaultAutoSave: e.target.checked });
   });
 
   // Export backup

@@ -19,6 +19,10 @@ let restoringTabIds = new Set();  // Tab IDs being restored (skip in onCreated)
 let removeQueue = [];
 let removeTimeout = null;
 
+// Autosave queue for groups with autoSave enabled
+let autosaveQueue = new Set();
+let autosaveTimeout = null;
+
 const GROUP_COLORS = [
   '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3',
   '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#ff9800', '#ff5722'
@@ -176,6 +180,7 @@ function setupEventListeners() {
           }
           await saveItems();
           render();
+          queueAutosave(openerGroupId);
           return;
         }
       }
@@ -253,6 +258,69 @@ async function processRemoveQueue() {
 
   await saveItems();
   render();
+
+  // Check if any removed tabs were in autosave groups
+  checkAutosaveForRemovedTabs(tabIds);
+}
+
+// Queue a group for autosave (debounced)
+function queueAutosave(groupId) {
+  const group = items.find(item => item.group === groupId);
+  if (!group || !group.autoSave || !group.linkedSessionId) return;
+
+  autosaveQueue.add(groupId);
+
+  if (autosaveTimeout) clearTimeout(autosaveTimeout);
+  autosaveTimeout = setTimeout(processAutosaveQueue, 500);
+}
+
+// Process all queued autosaves
+async function processAutosaveQueue() {
+  if (autosaveQueue.size === 0) return;
+
+  const groupIds = [...autosaveQueue];
+  autosaveQueue.clear();
+  autosaveTimeout = null;
+
+  for (const groupId of groupIds) {
+    const group = items.find(item => item.group === groupId);
+    if (!group || !group.linkedSessionId) continue;
+
+    // Update the saved session
+    const sessionId = group.linkedSessionId;
+    const existingSession = savedSessions[sessionId];
+    if (!existingSession) continue;
+
+    const sessionTabs = group.tabs.map(tabId => {
+      const data = tabData[tabId];
+      return {
+        url: data?.url || '',
+        title: data?.title || 'Unknown',
+        customName: customNames[tabId] || null
+      };
+    }).filter(t => t.url);
+
+    savedSessions[sessionId] = {
+      ...existingSession,
+      name: group.name,
+      color: group.color,
+      updatedAt: Date.now(),
+      tabs: sessionTabs
+    };
+  }
+
+  await chrome.storage.local.set({ savedSessions });
+}
+
+// Check if removed tabs affect any autosave groups
+function checkAutosaveForRemovedTabs(removedTabIds) {
+  // After removal, check which groups might need autosave
+  // The tabs are already removed, so we just trigger autosave for any autosave-enabled groups
+  items.forEach(item => {
+    if (item.group && item.autoSave && item.linkedSessionId) {
+      queueAutosave(item.group);
+    }
+  });
 }
 
 function render() {
@@ -477,12 +545,23 @@ async function handleDragEnd(evt, sourceGroupId) {
 
   await saveItems();
   render();
+
+  // Trigger autosave for affected groups
+  if (sourceGroupId) queueAutosave(sourceGroupId);
+  if (toGroupId && toGroupId !== sourceGroupId) queueAutosave(toGroupId);
 }
 
 async function handleMultiDrag(tabIds, toGroupId, insertIndex) {
   // Get tabs in their current visual order
   const allTabIds = getAllTabIds();
   const orderedTabIds = tabIds.sort((a, b) => allTabIds.indexOf(a) - allTabIds.indexOf(b));
+
+  // Track source groups before removal
+  const sourceGroupIds = new Set();
+  orderedTabIds.forEach(id => {
+    const groupId = getTabGroupId(id);
+    if (groupId) sourceGroupIds.add(groupId);
+  });
 
   // Remove all selected tabs from their current positions
   orderedTabIds.forEach(id => removeTabFromItems(id));
@@ -503,6 +582,10 @@ async function handleMultiDrag(tabIds, toGroupId, insertIndex) {
   await saveItems();
   selectedTabs.clear();
   render();
+
+  // Trigger autosave for all affected groups
+  sourceGroupIds.forEach(groupId => queueAutosave(groupId));
+  if (toGroupId) queueAutosave(toGroupId);
 }
 
 function removeTabFromItems(tabId) {
@@ -744,6 +827,7 @@ function showGroupContextMenu(x, y, group) {
   menu.className = 'context-menu';
 
   const hasSavedSession = !!group.linkedSessionId;
+  const hasAutoSave = group.autoSave === true;
 
   menu.innerHTML = `
     <button class="context-menu-item" data-action="save-session">
@@ -752,6 +836,9 @@ function showGroupContextMenu(x, y, group) {
     ${hasSavedSession ? `
     <button class="context-menu-item" data-action="save-as-new">
       Save as new...
+    </button>
+    <button class="context-menu-item" data-action="toggle-autosave">
+      Auto-save: ${hasAutoSave ? '✓ enabled' : 'disabled'}
     </button>
     ` : ''}
     <div class="context-menu-separator"></div>
@@ -790,12 +877,18 @@ function showGroupContextMenu(x, y, group) {
       case 'save-as-new':
         await saveGroupAsNewSession(group);
         break;
+      case 'toggle-autosave':
+        group.autoSave = !group.autoSave;
+        await saveItems();
+        render();
+        break;
       case 'rename-group':
         const newName = prompt('Enter group name:', group.name);
         if (newName && newName.trim()) {
           group.name = newName.trim();
           await saveItems();
           render();
+          queueAutosave(group.group);
         }
         break;
       case 'change-color':
@@ -839,6 +932,7 @@ function showColorPicker(group) {
     group.color = color;
     await saveItems();
     render();
+    queueAutosave(group.group);
   });
 }
 
@@ -877,6 +971,10 @@ async function promptRename(tabId) {
     customNames[tabId] = newName.trim();
     await chrome.storage.local.set({ customNames });
     render();
+
+    // Trigger autosave if tab is in an autosave group
+    const groupId = getTabGroupId(tabId);
+    if (groupId) queueAutosave(groupId);
   }
 }
 
@@ -994,8 +1092,12 @@ async function saveGroupAsSession(group) {
   savedSessions[sessionId] = session;
   await chrome.storage.local.set({ savedSessions });
 
-  // Link group to session
+  // Link group to session and set autoSave based on settings (only for new saves)
   group.linkedSessionId = sessionId;
+  if (!isUpdate && group.autoSave === undefined) {
+    const { settings = {} } = await chrome.storage.local.get('settings');
+    group.autoSave = settings.defaultAutoSave || false;
+  }
   await saveItems();
   render();
 }
@@ -1028,8 +1130,10 @@ async function saveGroupAsNewSession(group) {
   savedSessions[sessionId] = session;
   await chrome.storage.local.set({ savedSessions });
 
-  // Update group to link to new session
+  // Update group to link to new session and set autoSave based on settings
   group.linkedSessionId = sessionId;
+  const { settings = {} } = await chrome.storage.local.get('settings');
+  group.autoSave = settings.defaultAutoSave || false;
   await saveItems();
   render();
 }
