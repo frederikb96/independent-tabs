@@ -57,21 +57,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Handle file selection
   importFile.addEventListener('change', async (e) => {
-    console.log('File change event fired', e.target.files);
     const file = e.target.files[0];
-    if (!file) {
-      console.log('No file selected');
-      return;
-    }
-
-    console.log('File selected:', file.name, file.size);
+    if (!file) return;
 
     try {
       hideError();
       const text = await file.text();
-      console.log('File read, length:', text.length);
       const backup = JSON.parse(text);
-      console.log('Parsed backup:', backup);
 
       // Validate backup structure
       if (!backup.version || !backup.data) {
@@ -94,17 +86,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         `- ${customNameCount} custom tab names\n\n` +
         `Continue?`;
 
-      console.log('About to show confirm dialog');
-      const confirmed = confirm(confirmMsg);
-      console.log('Confirm result:', confirmed);
-
-      if (!confirmed) {
-        console.log('User cancelled');
+      if (!confirm(confirmMsg)) {
         importFile.value = '';
         return;
       }
-
-      console.log('User confirmed, starting restore...');
 
       // Restore data
       await chrome.storage.local.clear();
@@ -112,7 +97,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Verify restore worked
       const verified = await chrome.storage.local.get(['savedSessions', 'items', 'customNames']);
-      console.log('Restored data:', verified);
 
       // Reload settings display
       const newSettings = backup.data.settings || { newTabPosition: 'bottom' };
@@ -131,7 +115,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       showSaved('Backup restored!');
     } catch (err) {
-      console.error('Import error:', err);
       showError('Import failed: ' + err.message);
     }
 
