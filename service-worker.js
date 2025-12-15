@@ -14,8 +14,8 @@ chrome.runtime.onInstalled.addListener(async () => {
     });
   }
 
-  // Initialize tab order with current tabs (exclude PWAs, apps, popups)
-  const tabs = await chrome.tabs.query({ currentWindow: true, windowType: 'normal' });
+  // Initialize tab order with all tabs (exclude PWAs, apps, popups)
+  const tabs = await chrome.tabs.query({ windowType: 'normal' });
   const { tabOrder } = await chrome.storage.local.get('tabOrder');
   if (!tabOrder || tabOrder.length === 0) {
     const initialOrder = tabs.map(t => t.id);

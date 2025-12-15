@@ -45,8 +45,8 @@ async function init() {
     }
   }
 
-  // Only query normal browser windows (excludes PWAs, apps, popups)
-  const tabs = await chrome.tabs.query({ currentWindow: true, windowType: 'normal' });
+  // Query all normal browser windows (excludes PWAs, apps, popups)
+  const tabs = await chrome.tabs.query({ windowType: 'normal' });
   tabs.forEach(tab => {
     tabData[tab.id] = extractTabData(tab);
   });
@@ -134,7 +134,7 @@ function setupEventListeners() {
   chrome.storage.local.onChanged.addListener(async (changes) => {
     if (changes.items) {
       items = changes.items.newValue || [];
-      const tabs = await chrome.tabs.query({ currentWindow: true, windowType: 'normal' });
+      const tabs = await chrome.tabs.query({ windowType: 'normal' });
       tabs.forEach(tab => {
         tabData[tab.id] = extractTabData(tab);
       });
@@ -458,7 +458,7 @@ function renderGroup(group, itemIndex) {
   return container;
 }
 
-function handleTabClick(e, tabId, data) {
+async function handleTabClick(e, tabId, data) {
   if (e.target.classList.contains('close-btn')) return;
 
   if (e.shiftKey && lastClickedTab !== null) {
@@ -491,10 +491,32 @@ function handleTabClick(e, tabId, data) {
     selectedTabs.clear();
     lastClickedTab = tabId;
     keyboardFocusedTabId = tabId;
-    chrome.tabs.update(tabId, { active: true });
-    // Don't call chrome.windows.update - it steals focus from side panel
-    // Keep focus in side panel for keyboard navigation
-    document.getElementById('tab-list').focus();
+
+    // Get current window and tab's window
+    const [currentWindow, tab] = await Promise.all([
+      chrome.windows.getCurrent(),
+      chrome.tabs.get(tabId)
+    ]);
+
+    // Activate the tab
+    await chrome.tabs.update(tabId, { active: true });
+
+    // If tab is in different window, focus that window
+    if (tab.windowId !== currentWindow.id) {
+      await chrome.windows.update(tab.windowId, { focused: true });
+    }
+
+    // Keep focus in side panel for keyboard navigation (only if same window)
+    if (tab.windowId === currentWindow.id) {
+      document.getElementById('tab-list').focus();
+    }
+
+    // Update active state (onActivated might not fire if tab was already active)
+    Object.keys(tabData).forEach(id => {
+      tabData[id].active = (parseInt(id) === tabId);
+    });
+
+    render();
   }
 }
 
