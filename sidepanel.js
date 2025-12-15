@@ -45,7 +45,8 @@ async function init() {
     }
   }
 
-  const tabs = await chrome.tabs.query({ currentWindow: true });
+  // Only query normal browser windows (excludes PWAs, apps, popups)
+  const tabs = await chrome.tabs.query({ currentWindow: true, windowType: 'normal' });
   tabs.forEach(tab => {
     tabData[tab.id] = extractTabData(tab);
   });
@@ -133,7 +134,7 @@ function setupEventListeners() {
   chrome.storage.local.onChanged.addListener(async (changes) => {
     if (changes.items) {
       items = changes.items.newValue || [];
-      const tabs = await chrome.tabs.query({ currentWindow: true });
+      const tabs = await chrome.tabs.query({ currentWindow: true, windowType: 'normal' });
       tabs.forEach(tab => {
         tabData[tab.id] = extractTabData(tab);
       });
@@ -172,6 +173,10 @@ function setupEventListeners() {
   });
 
   chrome.tabs.onCreated.addListener(async (tab) => {
+    // Skip tabs from PWAs, apps, and popups
+    const win = await chrome.windows.get(tab.windowId);
+    if (win.type !== 'normal') return;
+
     tabData[tab.id] = extractTabData(tab);
     const { settings = { newTabPosition: 'bottom' } } = await chrome.storage.local.get('settings');
 
