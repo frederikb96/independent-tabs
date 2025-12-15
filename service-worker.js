@@ -56,7 +56,6 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 chrome.commands.onCommand.addListener(async (command) => {
   if (command === 'navigate-up' || command === 'navigate-down') {
     // Send message to side panel to handle navigation
-    // The side panel knows the current tab order and focused tab
     try {
       await chrome.runtime.sendMessage({
         type: 'navigate',
@@ -64,6 +63,30 @@ chrome.commands.onCommand.addListener(async (command) => {
       });
     } catch (e) {
       // Side panel might not be open - that's okay
+    }
+  } else if (command === 'focus-search') {
+    // Open side panel and focus search
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab) {
+        // Open the side panel first
+        await chrome.sidePanel.open({ windowId: tab.windowId });
+        // Give panel time to initialize, then send focus message
+        setTimeout(async () => {
+          try {
+            await chrome.runtime.sendMessage({ type: 'focus-search' });
+          } catch (e) {
+            // Panel might not be ready yet
+          }
+        }, 100);
+      }
+    } catch (e) {
+      // Side panel might already be open, just send focus message
+      try {
+        await chrome.runtime.sendMessage({ type: 'focus-search' });
+      } catch (e2) {
+        // Ignore
+      }
     }
   }
 });

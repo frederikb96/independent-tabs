@@ -15,6 +15,7 @@ let savedSessions = {};   // Saved session storage
 let currentView = 'tabs'; // Current view: 'tabs' or 'sessions'
 let sessionSortOrder = 'modified';  // Sort field: 'modified', 'created', 'name'
 let sessionSortAsc = false;         // Sort direction: false = descending (newest/Z first)
+let searchQuery = '';               // Current search query
 let restoringTabIds = new Set();  // Tab IDs being restored (skip in onCreated)
 
 // Debounce queue for tab removal (prevents race conditions when closing multiple tabs)
@@ -61,6 +62,7 @@ async function init() {
   setupContextMenu();
   setupKeyboardNavigation();
   setupViewToggle();
+  setupSearch();
 }
 
 function extractTabData(tab) {
@@ -128,10 +130,12 @@ function setupEventListeners() {
     chrome.runtime.openOptionsPage();
   });
 
-  // Listen for global keyboard shortcut navigation (works regardless of focus)
+  // Listen for global keyboard shortcuts
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'navigate') {
       handleGlobalNavigation(message.direction);
+    } else if (message.type === 'focus-search') {
+      focusSearch();
     }
   });
 
@@ -347,6 +351,21 @@ function checkAutosaveForRemovedTabs(removedTabIds) {
   });
 }
 
+// Check if a tab matches the search query
+function tabMatchesSearch(tabId) {
+  if (!searchQuery) return true;
+  const data = tabData[tabId];
+  if (!data) return false;
+
+  const title = (data.title || '').toLowerCase();
+  const url = (data.url || '').toLowerCase();
+  const customName = (customNames[tabId] || '').toLowerCase();
+
+  return title.includes(searchQuery) ||
+         url.includes(searchQuery) ||
+         customName.includes(searchQuery);
+}
+
 function render() {
   const tabList = document.getElementById('tab-list');
   const tabCount = document.getElementById('tab-count');
@@ -357,27 +376,54 @@ function render() {
 
   tabList.innerHTML = '';
   let visibleCount = 0;
+  let matchCount = 0;
 
   items.forEach((item, index) => {
     if (typeof item === 'number') {
       // Ungrouped tab
-      const el = renderTab(item);
-      if (el) {
-        tabList.appendChild(el);
-        visibleCount++;
+      if (tabMatchesSearch(item)) {
+        const el = renderTab(item);
+        if (el) {
+          tabList.appendChild(el);
+          matchCount++;
+        }
       }
+      visibleCount++;
     } else if (item.group) {
-      // Group
-      const groupEl = renderGroup(item, index);
-      tabList.appendChild(groupEl);
+      // Group - filter tabs within group
+      const matchingTabs = searchQuery
+        ? item.tabs.filter(tabId => tabMatchesSearch(tabId))
+        : item.tabs;
+
+      if (matchingTabs.length > 0 || !searchQuery) {
+        const groupEl = renderGroup(item, index, matchingTabs);
+        tabList.appendChild(groupEl);
+        matchCount += matchingTabs.length;
+      }
       visibleCount += item.tabs.length;
     }
   });
 
-  tabCount.textContent = `${visibleCount} tab${visibleCount !== 1 ? 's' : ''}`;
+  // Show "no results" message when searching
+  if (searchQuery && matchCount === 0) {
+    tabList.innerHTML = `
+      <div class="search-no-results">
+        <p>No tabs matching "${escapeHtml(searchQuery)}"</p>
+      </div>
+    `;
+  }
 
-  // Initialize sortable on root
-  initSortable(tabList, null);
+  // Show match count when searching, total count otherwise
+  if (searchQuery) {
+    tabCount.textContent = `${matchCount}/${visibleCount}`;
+  } else {
+    tabCount.textContent = `${visibleCount}`;
+  }
+
+  // Initialize sortable on root (only when not searching)
+  if (!searchQuery) {
+    initSortable(tabList, null);
+  }
 }
 
 function renderTab(tabId) {
@@ -415,18 +461,23 @@ function renderTab(tabId) {
   return item;
 }
 
-function renderGroup(group, itemIndex) {
+function renderGroup(group, itemIndex, filteredTabs = null) {
+  const tabsToRender = filteredTabs || group.tabs;
+
   const container = document.createElement('div');
   container.className = 'group-container';
   container.dataset.groupId = group.group;
   container.style.setProperty('--group-color', group.color);
 
-  // Group header
+  // Group header - show filtered count if searching
   const header = document.createElement('div');
   header.className = 'group-header';
+  const countDisplay = filteredTabs && filteredTabs.length !== group.tabs.length
+    ? `${filteredTabs.length}/${group.tabs.length}`
+    : '';
   header.innerHTML = `
     <span class="group-color-dot" style="background: ${group.color}"></span>
-    <span class="group-name">${escapeHtml(group.name)}</span>
+    <span class="group-name">${escapeHtml(group.name)}${countDisplay ? ` <span class="group-filter-count">(${countDisplay})</span>` : ''}</span>
     <button class="group-close-btn" title="Close all tabs in group">&times;</button>
   `;
 
@@ -447,7 +498,7 @@ function renderGroup(group, itemIndex) {
   tabsContainer.className = 'group-tabs';
   tabsContainer.dataset.groupId = group.group;
 
-  group.tabs.forEach(tabId => {
+  tabsToRender.forEach(tabId => {
     const el = renderTab(tabId);
     if (el) {
       tabsContainer.appendChild(el);
@@ -456,8 +507,10 @@ function renderGroup(group, itemIndex) {
 
   container.appendChild(tabsContainer);
 
-  // Initialize sortable on group tabs
-  initSortable(tabsContainer, group.group);
+  // Initialize sortable on group tabs (only when not searching)
+  if (!searchQuery) {
+    initSortable(tabsContainer, group.group);
+  }
 
   return container;
 }
@@ -1139,19 +1192,87 @@ function switchView(view) {
   const tabList = document.getElementById('tab-list');
   const sessionsList = document.getElementById('sessions-list');
   const viewBtns = document.querySelectorAll('.view-btn');
+  const searchInput = document.getElementById('search-input');
 
   viewBtns.forEach(btn => {
     btn.classList.toggle('active', btn.dataset.view === view);
   });
 
+  // Update search placeholder based on view
+  searchInput.placeholder = view === 'tabs' ? 'Search tabs...' : 'Search sessions...';
+
+  // Clear search when switching views
+  if (searchQuery) {
+    searchQuery = '';
+    searchInput.value = '';
+    document.getElementById('search-clear').classList.add('hidden');
+  }
+
   if (view === 'tabs') {
     tabList.classList.remove('hidden');
     sessionsList.classList.add('hidden');
+    render();
   } else {
     tabList.classList.add('hidden');
     sessionsList.classList.remove('hidden');
     renderSessions();
   }
+}
+
+// Search Setup
+function setupSearch() {
+  const searchInput = document.getElementById('search-input');
+  const searchClear = document.getElementById('search-clear');
+
+  searchInput.addEventListener('input', (e) => {
+    searchQuery = e.target.value.toLowerCase().trim();
+    searchClear.classList.toggle('hidden', !searchQuery);
+
+    if (currentView === 'tabs') {
+      render();
+    } else {
+      renderSessions();
+    }
+  });
+
+  searchClear.addEventListener('click', () => {
+    searchQuery = '';
+    searchInput.value = '';
+    searchClear.classList.add('hidden');
+    searchInput.focus();
+
+    if (currentView === 'tabs') {
+      render();
+    } else {
+      renderSessions();
+    }
+  });
+
+  // Escape to clear search
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (searchQuery) {
+        searchQuery = '';
+        searchInput.value = '';
+        searchClear.classList.add('hidden');
+        if (currentView === 'tabs') {
+          render();
+        } else {
+          renderSessions();
+        }
+      }
+      searchInput.blur();
+    }
+  });
+}
+
+function focusSearch() {
+  const searchInput = document.getElementById('search-input');
+  if (currentView !== 'tabs') {
+    switchView('tabs');
+  }
+  searchInput.focus();
+  searchInput.select();
 }
 
 // Sessions Management
@@ -1360,8 +1481,19 @@ async function deleteSession(sessionId) {
 function renderSessions() {
   const sessionsList = document.getElementById('sessions-list');
 
+  // Filter sessions based on search query
+  const allSessions = Object.values(savedSessions);
+  const filteredSessions = searchQuery
+    ? allSessions.filter(session => {
+        const name = session.name.toLowerCase();
+        // Also search within tab titles
+        const tabTitles = session.tabs.map(t => t.title.toLowerCase()).join(' ');
+        return name.includes(searchQuery) || tabTitles.includes(searchQuery);
+      })
+    : allSessions;
+
   // Sort based on current sort order and direction
-  const sortedSessions = Object.values(savedSessions).sort((a, b) => {
+  const sortedSessions = filteredSessions.sort((a, b) => {
     let result;
     switch (sessionSortOrder) {
       case 'name':
@@ -1400,13 +1532,24 @@ function renderSessions() {
     </div>
   `;
 
-  if (sortedSessions.length === 0) {
+  if (allSessions.length === 0) {
     sessionsList.innerHTML = `
       <div class="sessions-empty">
         <p>No saved sessions yet</p>
         <p>Right-click a group header → Save session</p>
       </div>
     `;
+    return;
+  }
+
+  // Show "no results" when searching with no matches
+  if (searchQuery && sortedSessions.length === 0) {
+    sessionsList.innerHTML = sortControls + `
+      <div class="search-no-results">
+        <p>No sessions matching "${escapeHtml(searchQuery)}"</p>
+      </div>
+    `;
+    setupSortHandlers();
     return;
   }
 
@@ -1424,23 +1567,7 @@ function renderSessions() {
     `;
   }).join('');
 
-  // Add sort field change handler
-  document.getElementById('session-sort').addEventListener('change', async (e) => {
-    sessionSortOrder = e.target.value;
-    const { settings = {} } = await chrome.storage.local.get('settings');
-    settings.sessionSortOrder = sessionSortOrder;
-    await chrome.storage.local.set({ settings });
-    renderSessions();
-  });
-
-  // Add sort direction toggle handler
-  document.getElementById('session-sort-dir').addEventListener('click', async () => {
-    sessionSortAsc = !sessionSortAsc;
-    const { settings = {} } = await chrome.storage.local.get('settings');
-    settings.sessionSortAsc = sessionSortAsc;
-    await chrome.storage.local.set({ settings });
-    renderSessions();
-  });
+  setupSortHandlers();
 
   // Add click handlers
   sessionsList.querySelectorAll('.session-item').forEach(item => {
@@ -1454,6 +1581,26 @@ function renderSessions() {
         restoreSession(sessionId);
       }
     });
+  });
+}
+
+function setupSortHandlers() {
+  // Add sort field change handler
+  document.getElementById('session-sort')?.addEventListener('change', async (e) => {
+    sessionSortOrder = e.target.value;
+    const { settings = {} } = await chrome.storage.local.get('settings');
+    settings.sessionSortOrder = sessionSortOrder;
+    await chrome.storage.local.set({ settings });
+    renderSessions();
+  });
+
+  // Add sort direction toggle handler
+  document.getElementById('session-sort-dir')?.addEventListener('click', async () => {
+    sessionSortAsc = !sessionSortAsc;
+    const { settings = {} } = await chrome.storage.local.get('settings');
+    settings.sessionSortAsc = sessionSortAsc;
+    await chrome.storage.local.set({ settings });
+    renderSessions();
   });
 }
 

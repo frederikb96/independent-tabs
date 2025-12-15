@@ -23,8 +23,16 @@ Extensions like "Most Recent Used Tab Stack" constantly reorder Chrome's native 
 | **Alt+Shift+Up/Down** | Navigate tabs (works globally, even when panel unfocused) |
 | **Arrow Up/Down** | Navigate tabs (when panel focused) |
 | **Space** | Rename current tab |
+| **Escape** | Clear search |
+| *(custom)* | Focus search - set in `chrome://extensions/shortcuts` |
 
 ## Features
+
+**Search**
+- Real-time filtering as you type
+- Searches: tab title, URL, custom name
+- Sessions: searches name and tab titles within
+- Escape to clear, shows match count
 
 **Tabs**
 - Click to focus, drag to reorder, × to close

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Independent Tabs",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "description": "A side panel showing tabs in your own custom order, independent from Chrome's tab bar.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -44,6 +44,9 @@
         "mac": "Alt+Shift+Down"
       },
       "description": "Navigate to next tab"
+    },
+    "focus-search": {
+      "description": "Open panel and focus search (set shortcut in chrome://extensions/shortcuts)"
     }
   },
   "options_ui": {
