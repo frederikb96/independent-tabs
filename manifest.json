@@ -46,7 +46,7 @@
       "description": "Navigate to next tab"
     },
     "focus-search": {
-      "description": "Open panel and focus search (set shortcut in chrome://extensions/shortcuts)"
+      "description": "Focus search bar"
     }
   },
   "options_ui": {
