@@ -13,7 +13,8 @@ let sortableInstances = [];    // Track SortableJS instances
 let keyboardFocusedTabId = null;  // For keyboard navigation
 let savedSessions = {};   // Saved session storage
 let currentView = 'tabs'; // Current view: 'tabs' or 'sessions'
-let sessionSortOrder = 'modified';  // Sort order: 'modified', 'created', 'name'
+let sessionSortOrder = 'modified';  // Sort field: 'modified', 'created', 'name'
+let sessionSortAsc = false;         // Sort direction: false = descending (newest/Z first)
 let restoringTabIds = new Set();  // Tab IDs being restored (skip in onCreated)
 
 // Debounce queue for tab removal (prevents race conditions when closing multiple tabs)
@@ -37,6 +38,7 @@ async function init() {
   customNames = stored.customNames || {};
   savedSessions = stored.savedSessions || {};
   sessionSortOrder = stored.settings?.sessionSortOrder || 'modified';
+  sessionSortAsc = stored.settings?.sessionSortAsc ?? false;
 
   // Migration from old tabOrder format
   if (items.length === 0) {
@@ -1358,27 +1360,43 @@ async function deleteSession(sessionId) {
 function renderSessions() {
   const sessionsList = document.getElementById('sessions-list');
 
-  // Sort based on current sort order
+  // Sort based on current sort order and direction
   const sortedSessions = Object.values(savedSessions).sort((a, b) => {
+    let result;
     switch (sessionSortOrder) {
       case 'name':
-        return a.name.localeCompare(b.name);
+        result = a.name.localeCompare(b.name);
+        break;
       case 'created':
-        return b.createdAt - a.createdAt;
+        result = a.createdAt - b.createdAt;
+        break;
       case 'modified':
       default:
-        return b.updatedAt - a.updatedAt;
+        result = a.updatedAt - b.updatedAt;
+        break;
     }
+    return sessionSortAsc ? result : -result;
   });
 
-  // Build sort dropdown
-  const sortDropdown = `
+  // Build direction tooltip based on context
+  const getDirectionTooltip = () => {
+    if (sessionSortOrder === 'name') {
+      return sessionSortAsc ? 'A → Z' : 'Z → A';
+    }
+    return sessionSortAsc ? 'Oldest first' : 'Newest first';
+  };
+
+  // Build sort controls: dropdown + direction button
+  const sortControls = `
     <div class="sessions-header">
       <select id="session-sort" class="session-sort-select">
-        <option value="modified" ${sessionSortOrder === 'modified' ? 'selected' : ''}>Last modified</option>
+        <option value="modified" ${sessionSortOrder === 'modified' ? 'selected' : ''}>Modified</option>
         <option value="created" ${sessionSortOrder === 'created' ? 'selected' : ''}>Created</option>
         <option value="name" ${sessionSortOrder === 'name' ? 'selected' : ''}>Name</option>
       </select>
+      <button id="session-sort-dir" class="session-sort-dir" title="${getDirectionTooltip()}">
+        ${sessionSortAsc ? '↑' : '↓'}
+      </button>
     </div>
   `;
 
@@ -1392,7 +1410,7 @@ function renderSessions() {
     return;
   }
 
-  sessionsList.innerHTML = sortDropdown + sortedSessions.map(session => {
+  sessionsList.innerHTML = sortControls + sortedSessions.map(session => {
     const date = formatDate(session.updatedAt);
     return `
       <div class="session-item" data-session-id="${session.id}">
@@ -1406,12 +1424,20 @@ function renderSessions() {
     `;
   }).join('');
 
-  // Add sort change handler
+  // Add sort field change handler
   document.getElementById('session-sort').addEventListener('change', async (e) => {
     sessionSortOrder = e.target.value;
-    // Save preference
     const { settings = {} } = await chrome.storage.local.get('settings');
     settings.sessionSortOrder = sessionSortOrder;
+    await chrome.storage.local.set({ settings });
+    renderSessions();
+  });
+
+  // Add sort direction toggle handler
+  document.getElementById('session-sort-dir').addEventListener('click', async () => {
+    sessionSortAsc = !sessionSortAsc;
+    const { settings = {} } = await chrome.storage.local.get('settings');
+    settings.sessionSortAsc = sessionSortAsc;
     await chrome.storage.local.set({ settings });
     renderSessions();
   });
