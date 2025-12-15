@@ -46,6 +46,10 @@
       "description": "Navigate to next tab"
     },
     "focus-search": {
+      "suggested_key": {
+        "default": "Alt+Shift+F",
+        "mac": "Alt+Shift+F"
+      },
       "description": "Focus search bar"
     }
   },
