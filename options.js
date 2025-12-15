@@ -111,8 +111,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       const verified = await chrome.storage.local.get(['savedSessions', 'items', 'customNames']);
 
       // Reload settings display
-      const newSettings = backup.data.settings || { newTabPosition: 'bottom' };
+      const newSettings = backup.data.settings || { newTabPosition: 'bottom', defaultAutoSave: false };
       positionSelect.value = newSettings.newTabPosition || 'bottom';
+      defaultAutosaveCheckbox.checked = newSettings.defaultAutoSave || false;
 
       // Show success with alert to ensure visibility
       const restoredItems = Array.isArray(verified.items) ? verified.items.length : 0;
