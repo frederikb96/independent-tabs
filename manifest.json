@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Independent Tabs",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "description": "A side panel showing tabs in your own custom order, independent from Chrome's tab bar.",
   "icons": {
     "16": "icons/icon-16.png",

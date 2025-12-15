@@ -13,6 +13,7 @@ let sortableInstances = [];    // Track SortableJS instances
 let keyboardFocusedTabId = null;  // For keyboard navigation
 let savedSessions = {};   // Saved session storage
 let currentView = 'tabs'; // Current view: 'tabs' or 'sessions'
+let sessionSortOrder = 'modified';  // Sort order: 'modified', 'created', 'name'
 let restoringTabIds = new Set();  // Tab IDs being restored (skip in onCreated)
 
 // Debounce queue for tab removal (prevents race conditions when closing multiple tabs)
@@ -31,10 +32,11 @@ const GROUP_COLORS = [
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
-  const stored = await chrome.storage.local.get(['items', 'customNames', 'savedSessions']);
+  const stored = await chrome.storage.local.get(['items', 'customNames', 'savedSessions', 'settings']);
   items = stored.items || [];
   customNames = stored.customNames || {};
   savedSessions = stored.savedSessions || {};
+  sessionSortOrder = stored.settings?.sessionSortOrder || 'modified';
 
   // Migration from old tabOrder format
   if (items.length === 0) {
@@ -1356,9 +1358,29 @@ async function deleteSession(sessionId) {
 function renderSessions() {
   const sessionsList = document.getElementById('sessions-list');
 
-  // Sort by updatedAt descending
-  const sortedSessions = Object.values(savedSessions)
-    .sort((a, b) => b.updatedAt - a.updatedAt);
+  // Sort based on current sort order
+  const sortedSessions = Object.values(savedSessions).sort((a, b) => {
+    switch (sessionSortOrder) {
+      case 'name':
+        return a.name.localeCompare(b.name);
+      case 'created':
+        return b.createdAt - a.createdAt;
+      case 'modified':
+      default:
+        return b.updatedAt - a.updatedAt;
+    }
+  });
+
+  // Build sort dropdown
+  const sortDropdown = `
+    <div class="sessions-header">
+      <select id="session-sort" class="session-sort-select">
+        <option value="modified" ${sessionSortOrder === 'modified' ? 'selected' : ''}>Last modified</option>
+        <option value="created" ${sessionSortOrder === 'created' ? 'selected' : ''}>Created</option>
+        <option value="name" ${sessionSortOrder === 'name' ? 'selected' : ''}>Name</option>
+      </select>
+    </div>
+  `;
 
   if (sortedSessions.length === 0) {
     sessionsList.innerHTML = `
@@ -1370,7 +1392,7 @@ function renderSessions() {
     return;
   }
 
-  sessionsList.innerHTML = sortedSessions.map(session => {
+  sessionsList.innerHTML = sortDropdown + sortedSessions.map(session => {
     const date = formatDate(session.updatedAt);
     return `
       <div class="session-item" data-session-id="${session.id}">
@@ -1383,6 +1405,16 @@ function renderSessions() {
       </div>
     `;
   }).join('');
+
+  // Add sort change handler
+  document.getElementById('session-sort').addEventListener('change', async (e) => {
+    sessionSortOrder = e.target.value;
+    // Save preference
+    const { settings = {} } = await chrome.storage.local.get('settings');
+    settings.sessionSortOrder = sessionSortOrder;
+    await chrome.storage.local.set({ settings });
+    renderSessions();
+  });
 
   // Add click handlers
   sessionsList.querySelectorAll('.session-item').forEach(item => {

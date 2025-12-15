@@ -387,6 +387,31 @@ footer {
   padding: 8px;
 }
 
+.sessions-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 4px 8px;
+}
+
+.session-sort-select {
+  background: var(--bg-color);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.session-sort-select:hover {
+  border-color: var(--accent-color);
+}
+
+.session-sort-select:focus {
+  border-color: var(--accent-color);
+}
+
 .session-item {
   display: flex;
   align-items: center;
