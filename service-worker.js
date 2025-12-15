@@ -65,28 +65,11 @@ chrome.commands.onCommand.addListener(async (command) => {
       // Side panel might not be open - that's okay
     }
   } else if (command === 'focus-search') {
-    // Open side panel and focus search
+    // Focus search in side panel (panel must be open)
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab) {
-        // Open the side panel first
-        await chrome.sidePanel.open({ windowId: tab.windowId });
-        // Give panel time to initialize, then send focus message
-        setTimeout(async () => {
-          try {
-            await chrome.runtime.sendMessage({ type: 'focus-search' });
-          } catch (e) {
-            // Panel might not be ready yet
-          }
-        }, 100);
-      }
+      await chrome.runtime.sendMessage({ type: 'focus-search' });
     } catch (e) {
-      // Side panel might already be open, just send focus message
-      try {
-        await chrome.runtime.sendMessage({ type: 'focus-search' });
-      } catch (e2) {
-        // Ignore
-      }
+      // Side panel not open - that's okay
     }
   }
 });
