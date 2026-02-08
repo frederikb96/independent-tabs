@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate JSON files
+        run: |
+          for f in manifest.json renovate.json; do
+            echo "Validating $f..."
+            python3 -c "import json; json.load(open('$f'))"
+          done
+
+      - name: Validate manifest structure
+        run: |
+          python3 -c "
+          import json, sys
+          m = json.load(open('manifest.json'))
+          required = ['manifest_version', 'name', 'version', 'permissions', 'background']
+          missing = [k for k in required if k not in m]
+          if missing:
+              print(f'Missing required fields: {missing}')
+              sys.exit(1)
+          if m['manifest_version'] != 3:
+              print(f'Expected manifest_version 3, got {m[\"manifest_version\"]}')
+              sys.exit(1)
+          print(f'Manifest OK: {m[\"name\"]} v{m[\"version\"]}')
+          "
+
+      - name: Check vendored libraries exist
+        run: |
+          for f in sortable.min.js fuse.min.js; do
+            if [ ! -f "$f" ]; then
+              echo "Missing vendored library: $f"
+              exit 1
+            fi
+            echo "$f OK ($(wc -c < "$f") bytes)"
+          done
+
+      - name: Verify extension files complete
+        run: |
+          for f in sidepanel.html sidepanel.js sidepanel.css service-worker.js \
+                   quicksearch.html quicksearch.js quicksearch.css \
+                   options.html options.js; do
+            if [ ! -f "$f" ]; then
+              echo "Missing extension file: $f"
+              exit 1
+            fi
+          done
+          echo "All extension files present"
