@@ -57,13 +57,42 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 // Note: Window positioning not possible on Wayland (chrome.windows.get returns 0,0).
 
 chrome.windows.onRemoved.addListener(async (windowId) => {
-  const { popupWindowId } = await chrome.storage.session.get('popupWindowId');
+  const { popupWindowId, quicksearchWindowId } = await chrome.storage.session.get(['popupWindowId', 'quicksearchWindowId']);
   if (windowId === popupWindowId) {
     await chrome.storage.session.remove('popupWindowId');
+  }
+  if (windowId === quicksearchWindowId) {
+    await chrome.storage.session.remove('quicksearchWindowId');
   }
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
+  if (command === 'open-quicksearch') {
+    const { quicksearchWindowId } = await chrome.storage.session.get('quicksearchWindowId');
+    if (quicksearchWindowId) {
+      try {
+        const existing = await chrome.windows.get(quicksearchWindowId);
+        if (existing.focused) {
+          await chrome.windows.remove(quicksearchWindowId);
+          await chrome.storage.session.remove('quicksearchWindowId');
+        } else {
+          await chrome.windows.update(quicksearchWindowId, { focused: true });
+        }
+        return;
+      } catch (e) {
+        await chrome.storage.session.remove('quicksearchWindowId');
+      }
+    }
+
+    const win = await chrome.windows.create({
+      url: 'quicksearch.html',
+      type: 'popup',
+      width: 450,
+      height: 500
+    });
+    await chrome.storage.session.set({ quicksearchWindowId: win.id });
+  }
+
   if (command === 'open-popup') {
     const { popupWindowId } = await chrome.storage.session.get('popupWindowId');
     if (popupWindowId) {

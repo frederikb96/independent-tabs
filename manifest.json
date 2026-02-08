@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Independent Tabs",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "A side panel showing tabs in your own custom order, independent from Chrome's tab bar.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -37,6 +37,13 @@
         "mac": "Alt+Q"
       },
       "description": "Open Independent Tabs in popup window"
+    },
+    "open-quicksearch": {
+      "suggested_key": {
+        "default": "Alt+S",
+        "mac": "Alt+S"
+      },
+      "description": "Open quick search"
     }
   },
   "options_ui": {
