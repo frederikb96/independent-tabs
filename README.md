@@ -17,14 +17,31 @@ Extensions like "Most Recent Used Tab Stack" constantly reorder Chrome's native 
 
 ## Keyboard Shortcuts
 
+**Global (work from any Chrome window):**
+
 | Shortcut | Action |
 |----------|--------|
-| **Alt+Shift+T** | Toggle side panel |
-| **Alt+Shift+Up/Down** | Navigate tabs (works globally, even when panel unfocused) |
-| **Arrow Up/Down** | Navigate tabs (when panel focused) |
-| **Space** | Rename current tab |
-| **Escape** | Clear search |
-| *(custom)* | Focus search - set in `chrome://extensions/shortcuts` |
+| **Alt+A** | Toggle side panel |
+| **Alt+Q** | Open popup window (or bring to front) |
+
+**Tabs view (when panel/popup focused):**
+
+| Shortcut | Action |
+|----------|--------|
+| **Arrow Up/Down** | Navigate tabs |
+| **Shift+Arrow Up/Down** | Extend selection (contiguous range) |
+| **W** | Close focused tab (or all selected) |
+| **Space** | Rename tab (single) or create group (multi-select) |
+| **S** | Switch to Sessions view |
+| **Escape** | Clear search / close popup window |
+
+**Sessions view (when panel/popup focused):**
+
+| Shortcut | Action |
+|----------|--------|
+| **Arrow Up/Down** | Navigate sessions |
+| **Enter** | Open/restore highlighted session |
+| **T** | Switch to Tabs view |
 
 ## Features
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Independent Tabs",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "A side panel showing tabs in your own custom order, independent from Chrome's tab bar.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -26,31 +26,17 @@
   "commands": {
     "_execute_action": {
       "suggested_key": {
-        "default": "Alt+Shift+T",
-        "mac": "Alt+Shift+T"
+        "default": "Alt+A",
+        "mac": "Alt+A"
       },
       "description": "Toggle Independent Tabs side panel"
     },
-    "navigate-up": {
+    "open-popup": {
       "suggested_key": {
-        "default": "Alt+Shift+Up",
-        "mac": "Alt+Shift+Up"
+        "default": "Alt+Q",
+        "mac": "Alt+Q"
       },
-      "description": "Navigate to previous tab"
-    },
-    "navigate-down": {
-      "suggested_key": {
-        "default": "Alt+Shift+Down",
-        "mac": "Alt+Shift+Down"
-      },
-      "description": "Navigate to next tab"
-    },
-    "focus-search": {
-      "suggested_key": {
-        "default": "Alt+Shift+F",
-        "mac": "Alt+Shift+F"
-      },
-      "description": "Focus search bar"
+      "description": "Open Independent Tabs in popup window"
     }
   },
   "options_ui": {

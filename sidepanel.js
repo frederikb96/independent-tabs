@@ -11,8 +11,10 @@ let selectedTabs = new Set();  // Currently selected tab IDs
 let lastClickedTab = null;     // For Shift+click range selection
 let sortableInstances = [];    // Track SortableJS instances
 let keyboardFocusedTabId = null;  // For keyboard navigation
+let selectionAnchorTabId = null;  // Anchor for Shift+comma/dot range selection
 let savedSessions = {};   // Saved session storage
 let currentView = 'tabs'; // Current view: 'tabs' or 'sessions'
+let keyboardFocusedSessionId = null;  // For session keyboard navigation
 let sessionSortOrder = 'modified';  // Sort field: 'modified', 'created', 'name'
 let sessionSortAsc = false;         // Sort direction: false = descending (newest/Z first)
 let searchQuery = '';               // Current search query
@@ -57,12 +59,42 @@ async function init() {
   });
 
   await syncItemsWithTabs(tabs);
+
+  // Set initial cursor to the active tab (side panel: current window, popup: last focused browser window)
+  const currentWin = await chrome.windows.getCurrent();
+  let activeTab = tabs.find(t => t.active && t.windowId === currentWin.id);
+  if (!activeTab) {
+    const lastFocused = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
+    activeTab = tabs.find(t => t.active && t.windowId === lastFocused.id);
+  }
+  if (activeTab) keyboardFocusedTabId = activeTab.id;
+
   render();
   setupEventListeners();
   setupContextMenu();
   setupKeyboardNavigation();
   setupViewToggle();
   setupSearch();
+
+  // Popup window mode: save size on resize (covers all close methods), Escape to close
+  const currentWindow = await chrome.windows.getCurrent();
+  if (currentWindow.type === 'popup') {
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        chrome.storage.local.set({
+          popupSize: { width: window.outerWidth, height: window.outerHeight }
+        });
+      }, 300);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        chrome.windows.remove(currentWindow.id);
+      }
+    });
+  }
 }
 
 function extractTabData(tab) {
@@ -130,14 +162,6 @@ function setupEventListeners() {
     chrome.runtime.openOptionsPage();
   });
 
-  // Listen for global keyboard shortcuts
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'navigate') {
-      handleGlobalNavigation(message.direction);
-    } else if (message.type === 'focus-search') {
-      focusSearch();
-    }
-  });
 
   chrome.storage.local.onChanged.addListener(async (changes) => {
     if (changes.items) {
@@ -190,9 +214,18 @@ function setupEventListeners() {
 
     // Check AFTER await - by now restoringTabIds will be populated if this is a restore
     if (restoringTabIds.has(tab.id)) {
-      restoringTabIds.delete(tab.id);  // Clean up
+      restoringTabIds.delete(tab.id);
       return;
     }
+
+    // Check shared restore flag (handles multiple sidepanel instances running simultaneously)
+    const { restoreInProgress } = await chrome.storage.session.get('restoreInProgress');
+    if (restoreInProgress && Date.now() - restoreInProgress < 10000) {
+      return;
+    }
+
+    // Skip if tab already exists in items (prevents duplicates across multiple instances)
+    if (getAllTabIds().includes(tab.id)) return;
 
     // Check if opener tab is in a group - add child tab to same group
     if (tab.openerTabId) {
@@ -432,9 +465,8 @@ function renderTab(tabId) {
 
   const item = document.createElement('div');
   item.className = 'tab-item';
-  if (data.active) item.classList.add('active');
-  if (selectedTabs.has(tabId)) item.classList.add('selected');
   if (keyboardFocusedTabId === tabId) item.classList.add('keyboard-focused');
+  if (selectedTabs.has(tabId)) item.classList.add('selected');
   item.dataset.tabId = tabId;
 
   const faviconSrc = data.favIconUrl || `chrome-extension://${chrome.runtime.id}/icons/icon-16.png`;
@@ -549,24 +581,11 @@ async function handleTabClick(e, tabId, data) {
     lastClickedTab = tabId;
     keyboardFocusedTabId = tabId;
 
-    // Get current window and tab's window
-    const [currentWindow, tab] = await Promise.all([
-      chrome.windows.getCurrent(),
-      chrome.tabs.get(tabId)
-    ]);
+    const tab = await chrome.tabs.get(tabId);
 
-    // Activate the tab
+    // Activate the tab and focus its window
     await chrome.tabs.update(tabId, { active: true });
-
-    // If tab is in different window, focus that window
-    if (tab.windowId !== currentWindow.id) {
-      await chrome.windows.update(tab.windowId, { focused: true });
-    }
-
-    // Keep focus in side panel for keyboard navigation (only if same window)
-    if (tab.windowId === currentWindow.id) {
-      document.getElementById('tab-list').focus();
-    }
+    await chrome.windows.update(tab.windowId, { focused: true });
 
     // Update active state (onActivated might not fire if tab was already active)
     Object.keys(tabData).forEach(id => {
@@ -750,7 +769,16 @@ async function createGroup(tabIds, name = 'New Group') {
   // Insert group at the position of first tab
   items.splice(insertIndex, 0, group);
 
-  await saveItems();
+  // Auto-save as session if setting is enabled
+  const { settings = {} } = await chrome.storage.local.get('settings');
+  if (settings.autoSaveOnGroupCreation) {
+    group.autoSave = true;
+    await saveItems();
+    await saveGroupAsSession(group);
+  } else {
+    await saveItems();
+  }
+
   selectedTabs.clear();
   render();
 }
@@ -1047,6 +1075,117 @@ function adjustMenuPosition(menu) {
   }
 }
 
+function showSessionContextMenu(x, y, sessionId) {
+  hideContextMenu();
+
+  const session = savedSessions[sessionId];
+  if (!session) return;
+
+  const menu = document.createElement('div');
+  menu.id = 'context-menu';
+  menu.className = 'context-menu';
+
+  menu.innerHTML = `
+    <button class="context-menu-item" data-action="toggle-autosave">
+      Auto-save: ${session.autoSave ? 'enabled' : 'disabled'}
+    </button>
+    <button class="context-menu-item" data-action="rename-session">
+      Rename
+    </button>
+    <button class="context-menu-item" data-action="change-session-color">
+      Change color
+    </button>
+  `;
+
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  document.body.appendChild(menu);
+
+  adjustMenuPosition(menu);
+
+  menu.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const action = e.target.dataset.action;
+    if (!action) return;
+
+    hideContextMenu();
+
+    switch (action) {
+      case 'toggle-autosave':
+        session.autoSave = !session.autoSave;
+        await chrome.storage.local.set({ savedSessions });
+        // Sync to linked group if it exists
+        const linkedGroup = items.find(item => item.group && item.linkedSessionId === sessionId);
+        if (linkedGroup) {
+          linkedGroup.autoSave = session.autoSave;
+          await saveItems();
+        }
+        renderSessions();
+        break;
+      case 'rename-session':
+        const newName = prompt('Enter session name:', session.name);
+        if (newName && newName.trim()) {
+          session.name = newName.trim();
+          session.updatedAt = Date.now();
+          await chrome.storage.local.set({ savedSessions });
+          // Sync to linked group
+          const renamedGroup = items.find(item => item.group && item.linkedSessionId === sessionId);
+          if (renamedGroup) {
+            renamedGroup.name = newName.trim();
+            await saveItems();
+          }
+          renderSessions();
+        }
+        break;
+      case 'change-session-color':
+        showSessionColorPicker(sessionId);
+        break;
+    }
+  });
+}
+
+function showSessionColorPicker(sessionId) {
+  hideContextMenu();
+
+  const session = savedSessions[sessionId];
+  if (!session) return;
+
+  const menu = document.createElement('div');
+  menu.id = 'context-menu';
+  menu.className = 'context-menu color-picker';
+
+  menu.innerHTML = GROUP_COLORS.map(color => `
+    <button class="color-option" data-color="${color}" style="background: ${color}"></button>
+  `).join('');
+
+  const sessionEl = document.querySelector(`.session-item[data-session-id="${sessionId}"]`);
+  if (sessionEl) {
+    const rect = sessionEl.getBoundingClientRect();
+    menu.style.left = `${rect.left}px`;
+    menu.style.top = `${rect.bottom + 4}px`;
+  }
+  document.body.appendChild(menu);
+
+  adjustMenuPosition(menu);
+
+  menu.addEventListener('click', async (e) => {
+    const color = e.target.dataset.color;
+    if (!color) return;
+
+    hideContextMenu();
+    session.color = color;
+    session.updatedAt = Date.now();
+    await chrome.storage.local.set({ savedSessions });
+    // Sync to linked group
+    const linkedGroup = items.find(item => item.group && item.linkedSessionId === sessionId);
+    if (linkedGroup) {
+      linkedGroup.color = color;
+      await saveItems();
+    }
+    renderSessions();
+  });
+}
+
 function getTabGroupId(tabId) {
   for (const item of items) {
     if (item.group && item.tabs.includes(tabId)) {
@@ -1079,99 +1218,187 @@ async function promptRename(tabId) {
   }
 }
 
-// Global keyboard shortcut navigation (called from service worker via message)
-async function handleGlobalNavigation(direction) {
-  const allTabIds = getAllTabIds();
-  if (allTabIds.length === 0) return;
-
-  // If no keyboard focus yet, start from the currently active tab
-  let currentIndex;
-  if (keyboardFocusedTabId !== null && allTabIds.includes(keyboardFocusedTabId)) {
-    currentIndex = allTabIds.indexOf(keyboardFocusedTabId);
-  } else {
-    // Find the currently active tab
-    const activeTabId = Object.keys(tabData).find(id => tabData[id].active);
-    currentIndex = activeTabId ? allTabIds.indexOf(parseInt(activeTabId)) : -1;
-  }
-
-  if (direction === 'down') {
-    currentIndex = currentIndex < allTabIds.length - 1 ? currentIndex + 1 : currentIndex;
-  } else {
-    currentIndex = currentIndex > 0 ? currentIndex - 1 : (currentIndex === -1 ? allTabIds.length - 1 : currentIndex);
-  }
-
-  const newTabId = allTabIds[currentIndex];
-  if (newTabId !== undefined) {
-    keyboardFocusedTabId = newTabId;
-    lastClickedTab = newTabId;
-    selectedTabs.clear();
-
-    await chrome.tabs.update(newTabId, { active: true });
-    render();
-
-    const focusedEl = document.querySelector(`.tab-item[data-tab-id="${newTabId}"]`);
-    if (focusedEl) {
-      focusedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }
-  }
-}
-
 // Keyboard Navigation (when side panel has focus)
 function setupKeyboardNavigation() {
   document.addEventListener('keydown', async (e) => {
-    // Ignore if typing in input/textarea
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    // Ignore if typing in input/textarea/contenteditable
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
 
     // Ignore if context menu is open
     if (document.getElementById('context-menu')) return;
 
-    const allTabIds = getAllTabIds();
-    if (allTabIds.length === 0) return;
-
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
 
-      // If no keyboard focus yet, start from the currently active tab
-      let currentIndex;
-      if (keyboardFocusedTabId !== null && allTabIds.includes(keyboardFocusedTabId)) {
-        currentIndex = allTabIds.indexOf(keyboardFocusedTabId);
-      } else {
-        const activeTabId = Object.keys(tabData).find(id => tabData[id].active);
-        currentIndex = activeTabId ? allTabIds.indexOf(parseInt(activeTabId)) : -1;
-      }
+      if (currentView === 'sessions') {
+        // Session navigation
+        const sessionItems = document.querySelectorAll('#sessions-list .session-item');
+        if (sessionItems.length === 0) return;
 
-      if (e.key === 'ArrowDown') {
-        // Move down (or start at first tab)
-        currentIndex = currentIndex < allTabIds.length - 1 ? currentIndex + 1 : currentIndex;
-      } else {
-        // Move up (or start at last tab)
-        currentIndex = currentIndex > 0 ? currentIndex - 1 : (currentIndex === -1 ? allTabIds.length - 1 : currentIndex);
-      }
+        const sessionIds = Array.from(sessionItems).map(el => el.dataset.sessionId);
+        let currentIndex = keyboardFocusedSessionId ? sessionIds.indexOf(keyboardFocusedSessionId) : -1;
 
-      const newTabId = allTabIds[currentIndex];
-      if (newTabId !== undefined) {
-        keyboardFocusedTabId = newTabId;
-        lastClickedTab = newTabId;
-        selectedTabs.clear();
-
-        // Focus the tab in Chrome (don't focus window - causes focus steal from side panel)
-        await chrome.tabs.update(newTabId, { active: true });
-
-        render();
-
-        // Scroll the focused tab into view and keep focus in side panel
-        const focusedEl = document.querySelector(`.tab-item[data-tab-id="${newTabId}"]`);
-        if (focusedEl) {
-          focusedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        if (e.key === 'ArrowDown') {
+          currentIndex = currentIndex < sessionIds.length - 1 ? currentIndex + 1 : currentIndex;
+        } else {
+          currentIndex = currentIndex > 0 ? currentIndex - 1 : (currentIndex === -1 ? sessionIds.length - 1 : currentIndex);
         }
 
-        // Re-focus the tab list to maintain keyboard control
-        document.getElementById('tab-list').focus();
+        keyboardFocusedSessionId = sessionIds[currentIndex];
+        renderSessions();
+
+        const focusedEl = document.querySelector(`.session-item[data-session-id="${keyboardFocusedSessionId}"]`);
+        if (focusedEl) focusedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        document.getElementById('sessions-list').focus();
+      } else {
+        // Tab navigation
+        const allTabIds = getAllTabIds();
+        if (allTabIds.length === 0) return;
+
+        let currentIndex;
+        if (keyboardFocusedTabId !== null && allTabIds.includes(keyboardFocusedTabId)) {
+          currentIndex = allTabIds.indexOf(keyboardFocusedTabId);
+        } else {
+          const activeTabId = Object.keys(tabData).find(id => tabData[id].active);
+          currentIndex = activeTabId ? allTabIds.indexOf(parseInt(activeTabId)) : -1;
+        }
+
+        if (e.key === 'ArrowDown') {
+          currentIndex = currentIndex < allTabIds.length - 1 ? currentIndex + 1 : currentIndex;
+        } else {
+          currentIndex = currentIndex > 0 ? currentIndex - 1 : (currentIndex === -1 ? allTabIds.length - 1 : currentIndex);
+        }
+
+        const newTabId = allTabIds[currentIndex];
+        if (newTabId === undefined) return;
+
+        // Shift+Arrow extends selection
+        if (e.shiftKey) {
+          if (selectionAnchorTabId === null) {
+            selectionAnchorTabId = keyboardFocusedTabId;
+          }
+
+          keyboardFocusedTabId = newTabId;
+
+          const anchorIdx = allTabIds.indexOf(selectionAnchorTabId);
+          const focusIdx = allTabIds.indexOf(keyboardFocusedTabId);
+          const [from, to] = anchorIdx <= focusIdx ? [anchorIdx, focusIdx] : [focusIdx, anchorIdx];
+
+          selectedTabs.clear();
+          for (let i = from; i <= to; i++) {
+            selectedTabs.add(allTabIds[i]);
+          }
+
+          render();
+
+          const focusedEl = document.querySelector(`.tab-item[data-tab-id="${newTabId}"]`);
+          if (focusedEl) focusedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          document.getElementById('tab-list').focus();
+        } else {
+          keyboardFocusedTabId = newTabId;
+          lastClickedTab = newTabId;
+          selectedTabs.clear();
+          selectionAnchorTabId = null;
+
+          await chrome.tabs.update(newTabId, { active: true });
+          render();
+
+          const focusedEl = document.querySelector(`.tab-item[data-tab-id="${newTabId}"]`);
+          if (focusedEl) focusedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          document.getElementById('tab-list').focus();
+        }
       }
-    } else if (e.key === ' ' && keyboardFocusedTabId !== null) {
-      // Space bar - open rename prompt
+    } else if (e.key === 'Enter' && currentView === 'tabs' && keyboardFocusedTabId !== null) {
+      // Enter activates focused tab and focuses its window (same as click)
       e.preventDefault();
-      await promptRename(keyboardFocusedTabId);
+      selectedTabs.clear();
+      selectionAnchorTabId = null;
+      const tab = await chrome.tabs.get(keyboardFocusedTabId);
+      await chrome.tabs.update(keyboardFocusedTabId, { active: true });
+      await chrome.windows.update(tab.windowId, { focused: true });
+      render();
+    } else if (e.key === 'Enter' && currentView === 'sessions' && keyboardFocusedSessionId) {
+      // Enter restores the focused session
+      e.preventDefault();
+      await restoreSession(keyboardFocusedSessionId);
+    } else if (e.key === 'w' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && currentView === 'tabs') {
+      // W closes focused tab or all selected tabs
+      e.preventDefault();
+
+      const allTabIds = getAllTabIds();
+      if (allTabIds.length === 0) return;
+
+      if (selectedTabs.size > 1) {
+        const tabsToClose = Array.from(selectedTabs);
+        const closingSet = new Set(tabsToClose);
+
+        // Find next focusable tab: first non-closing tab after last closing position
+        const lastClosedIdx = Math.max(...tabsToClose.map(id => allTabIds.indexOf(id)));
+        let nextTabId = null;
+        for (let i = lastClosedIdx + 1; i < allTabIds.length; i++) {
+          if (!closingSet.has(allTabIds[i])) { nextTabId = allTabIds[i]; break; }
+        }
+        if (!nextTabId) {
+          const firstClosedIdx = Math.min(...tabsToClose.map(id => allTabIds.indexOf(id)));
+          for (let i = firstClosedIdx - 1; i >= 0; i--) {
+            if (!closingSet.has(allTabIds[i])) { nextTabId = allTabIds[i]; break; }
+          }
+        }
+
+        selectedTabs.clear();
+        selectionAnchorTabId = null;
+
+        if (nextTabId) {
+          keyboardFocusedTabId = nextTabId;
+          await chrome.tabs.update(nextTabId, { active: true });
+        }
+
+        await chrome.tabs.remove(tabsToClose);
+      } else if (keyboardFocusedTabId !== null) {
+        const currentIdx = allTabIds.indexOf(keyboardFocusedTabId);
+        const nextTabId = allTabIds[currentIdx + 1] || allTabIds[currentIdx - 1] || null;
+        const tabToClose = keyboardFocusedTabId;
+
+        selectionAnchorTabId = null;
+
+        if (nextTabId) {
+          keyboardFocusedTabId = nextTabId;
+          await chrome.tabs.update(nextTabId, { active: true });
+        }
+
+        await chrome.tabs.remove(tabToClose);
+      }
+    } else if (e.key === 's' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && currentView === 'tabs') {
+      // S switches to Sessions view (no-op if already in Sessions)
+      e.preventDefault();
+      switchView('sessions');
+    } else if (e.key === 't' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && currentView === 'sessions') {
+      // T switches to Tabs view (no-op if already in Tabs)
+      e.preventDefault();
+      switchView('tabs');
+    } else if (e.key === ' ' && currentView === 'tabs') {
+      e.preventDefault();
+      if (selectedTabs.size >= 2) {
+        // Multi-select: prompt to create group
+        const name = prompt('Enter custom name for this group:');
+        if (name && name.trim()) {
+          await createGroup(Array.from(selectedTabs), name.trim());
+        }
+      } else if (keyboardFocusedTabId !== null) {
+        // Single tab: rename
+        await promptRename(keyboardFocusedTabId);
+      }
+    }
+  });
+
+  // Click on empty space clears selection
+  document.getElementById('tab-list').addEventListener('click', (e) => {
+    if (e.target.id === 'tab-list' || e.target.classList.contains('group-tabs')) {
+      if (selectedTabs.size > 0) {
+        selectedTabs.clear();
+        selectionAnchorTabId = null;
+        render();
+      }
     }
   });
 }
@@ -1189,6 +1416,7 @@ function setupViewToggle() {
 
 function switchView(view) {
   currentView = view;
+  keyboardFocusedSessionId = null;
   const tabList = document.getElementById('tab-list');
   const sessionsList = document.getElementById('sessions-list');
   const viewBtns = document.querySelectorAll('.view-btn');
@@ -1266,14 +1494,6 @@ function setupSearch() {
   });
 }
 
-function focusSearch() {
-  const searchInput = document.getElementById('search-input');
-  if (currentView !== 'tabs') {
-    switchView('tabs');
-  }
-  searchInput.focus();
-  searchInput.select();
-}
 
 // Sessions Management
 async function saveGroupAsSession(group) {
@@ -1387,6 +1607,9 @@ async function restoreSession(sessionId) {
     return;
   }
 
+  // Signal other sidepanel instances to skip onCreated during restore
+  await chrome.storage.session.set({ restoreInProgress: Date.now() });
+
   const BATCH_SIZE = 5;
   const BATCH_DELAY = 150;
   const createdTabIds = [];
@@ -1425,7 +1648,10 @@ async function restoreSession(sessionId) {
     }
   }
 
-  if (createdTabIds.length === 0) return;
+  if (createdTabIds.length === 0) {
+    await chrome.storage.session.remove('restoreInProgress');
+    return;
+  }
 
   // Create group with restored tabs (onCreated skipped adding these due to restoringTabIds)
   const group = {
@@ -1446,6 +1672,7 @@ async function restoreSession(sessionId) {
   }
 
   await saveItems();
+  await chrome.storage.session.remove('restoreInProgress');
 
   // Switch to tabs view
   switchView('tabs');
@@ -1555,12 +1782,13 @@ function renderSessions() {
 
   sessionsList.innerHTML = sortControls + sortedSessions.map(session => {
     const date = formatDate(session.updatedAt);
+    const focusedClass = keyboardFocusedSessionId === session.id ? ' keyboard-focused' : '';
     return `
-      <div class="session-item" data-session-id="${session.id}">
+      <div class="session-item${focusedClass}" data-session-id="${session.id}">
         <span class="session-color" style="background: ${session.color}"></span>
         <div class="session-info">
           <span class="session-name">${escapeHtml(session.name)}</span>
-          <span class="session-meta">${session.tabs.length} tabs • ${date}</span>
+          <span class="session-meta">${session.tabs.length} tabs • ${date}${session.autoSave ? ' • auto-save' : ''}</span>
         </div>
         <button class="session-delete" title="Delete session">&times;</button>
       </div>
@@ -1569,7 +1797,7 @@ function renderSessions() {
 
   setupSortHandlers();
 
-  // Add click handlers
+  // Add click and context menu handlers
   sessionsList.querySelectorAll('.session-item').forEach(item => {
     const sessionId = item.dataset.sessionId;
 
@@ -1580,6 +1808,12 @@ function renderSessions() {
       } else {
         restoreSession(sessionId);
       }
+    });
+
+    item.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showSessionContextMenu(e.clientX, e.clientY, sessionId);
     });
   });
 }

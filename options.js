@@ -3,6 +3,8 @@
 document.addEventListener('DOMContentLoaded', async () => {
   const positionSelect = document.getElementById('position');
   const defaultAutosaveCheckbox = document.getElementById('default-autosave');
+  const autoSaveOnGroupCreationCheckbox = document.getElementById('autosave-on-group-creation');
+  const popupCloseOnRefocusCheckbox = document.getElementById('popup-close-on-refocus');
   const savedIndicator = document.getElementById('saved');
   const exportBtn = document.getElementById('export-btn');
   const importBtn = document.getElementById('import-btn');
@@ -13,6 +15,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const { settings = { newTabPosition: 'bottom', defaultAutoSave: false } } = await chrome.storage.local.get('settings');
   positionSelect.value = settings.newTabPosition || 'bottom';
   defaultAutosaveCheckbox.checked = settings.defaultAutoSave || false;
+  autoSaveOnGroupCreationCheckbox.checked = settings.autoSaveOnGroupCreation || false;
+  popupCloseOnRefocusCheckbox.checked = settings.popupCloseOnRefocus || false;
 
   // Save settings helper
   async function saveSettings(updates) {
@@ -29,6 +33,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   defaultAutosaveCheckbox.addEventListener('change', async (e) => {
     await saveSettings({ defaultAutoSave: e.target.checked });
+  });
+
+  autoSaveOnGroupCreationCheckbox.addEventListener('change', async (e) => {
+    await saveSettings({ autoSaveOnGroupCreation: e.target.checked });
+  });
+
+  popupCloseOnRefocusCheckbox.addEventListener('change', async (e) => {
+    await saveSettings({ popupCloseOnRefocus: e.target.checked });
   });
 
   // Export backup
@@ -114,6 +126,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const newSettings = backup.data.settings || { newTabPosition: 'bottom', defaultAutoSave: false };
       positionSelect.value = newSettings.newTabPosition || 'bottom';
       defaultAutosaveCheckbox.checked = newSettings.defaultAutoSave || false;
+      autoSaveOnGroupCreationCheckbox.checked = newSettings.autoSaveOnGroupCreation || false;
+      popupCloseOnRefocusCheckbox.checked = newSettings.popupCloseOnRefocus || false;
 
       // Show success with alert to ensure visibility
       const restoredItems = Array.isArray(verified.items) ? verified.items.length : 0;

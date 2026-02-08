@@ -52,24 +52,45 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 // NOTE: We intentionally DO NOT listen to chrome.tabs.onMoved
 // This is the key feature - our order is independent from Chrome's tab bar order!
 
-// Handle keyboard shortcuts (works regardless of focus)
+// Popup window management
+// Window ID tracked in chrome.storage.session (clears on browser close).
+// Note: Window positioning not possible on Wayland (chrome.windows.get returns 0,0).
+
+chrome.windows.onRemoved.addListener(async (windowId) => {
+  const { popupWindowId } = await chrome.storage.session.get('popupWindowId');
+  if (windowId === popupWindowId) {
+    await chrome.storage.session.remove('popupWindowId');
+  }
+});
+
 chrome.commands.onCommand.addListener(async (command) => {
-  if (command === 'navigate-up' || command === 'navigate-down') {
-    // Send message to side panel to handle navigation
-    try {
-      await chrome.runtime.sendMessage({
-        type: 'navigate',
-        direction: command === 'navigate-up' ? 'up' : 'down'
-      });
-    } catch (e) {
-      // Side panel might not be open - that's okay
+  if (command === 'open-popup') {
+    const { popupWindowId } = await chrome.storage.session.get('popupWindowId');
+    if (popupWindowId) {
+      try {
+        const existing = await chrome.windows.get(popupWindowId);
+        if (existing.focused) {
+          const { settings = {} } = await chrome.storage.local.get('settings');
+          if (settings.popupCloseOnRefocus) {
+            await chrome.windows.remove(popupWindowId);
+            await chrome.storage.session.remove('popupWindowId');
+          }
+        } else {
+          await chrome.windows.update(popupWindowId, { focused: true });
+        }
+        return;
+      } catch (e) {
+        await chrome.storage.session.remove('popupWindowId');
+      }
     }
-  } else if (command === 'focus-search') {
-    // Focus search in side panel (panel must be open)
-    try {
-      await chrome.runtime.sendMessage({ type: 'focus-search' });
-    } catch (e) {
-      // Side panel not open - that's okay
-    }
+
+    const { popupSize } = await chrome.storage.local.get('popupSize');
+    const win = await chrome.windows.create({
+      url: 'sidepanel.html',
+      type: 'popup',
+      width: popupSize?.width || 350,
+      height: popupSize?.height || 700
+    });
+    await chrome.storage.session.set({ popupWindowId: win.id });
   }
 });

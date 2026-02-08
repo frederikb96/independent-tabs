@@ -40,6 +40,7 @@ body {
   background: var(--bg-color);
   color: var(--text-color);
   height: 100vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   user-select: none;
@@ -82,7 +83,7 @@ header h1 {
 .search-container {
   display: flex;
   align-items: center;
-  padding: 0 12px 8px;
+  padding: 8px 12px;
   gap: 8px;
   position: relative;
 }
@@ -96,6 +97,7 @@ header h1 {
 
 #search-input {
   flex: 1;
+  min-width: 0;
   background: var(--hover-bg);
   border: 1px solid transparent;
   border-radius: 6px;
@@ -113,6 +115,16 @@ header h1 {
 #search-input:focus {
   background: var(--bg-color);
   border-color: var(--accent-color);
+}
+
+#search-input.search-highlight {
+  animation: highlight-pulse 0.3s ease;
+}
+
+@keyframes highlight-pulse {
+  0% { box-shadow: 0 0 0 0 var(--accent-color); }
+  50% { box-shadow: 0 0 0 4px var(--accent-color); }
+  100% { box-shadow: 0 0 0 0 var(--accent-color); }
 }
 
 .search-clear {
@@ -178,7 +190,7 @@ header h1 {
   background: var(--hover-bg);
 }
 
-.tab-item.active {
+.tab-item.keyboard-focused {
   background: var(--active-bg);
 }
 
@@ -187,14 +199,9 @@ header h1 {
   box-shadow: inset 3px 0 0 var(--accent-color);
 }
 
-.tab-item.active.selected {
+.tab-item.keyboard-focused.selected {
   background: var(--active-bg);
   box-shadow: inset 3px 0 0 var(--accent-color);
-}
-
-.tab-item.keyboard-focused {
-  outline: 2px solid var(--accent-color);
-  outline-offset: -2px;
 }
 
 /* Favicon */
@@ -460,6 +467,7 @@ footer {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 8px;
+  outline: none;
 }
 
 .sessions-header {
@@ -521,6 +529,11 @@ footer {
 
 .session-item:hover {
   background: var(--hover-bg);
+}
+
+.session-item.keyboard-focused {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -2px;
 }
 
 .session-color {
