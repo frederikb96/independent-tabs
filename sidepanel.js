@@ -576,18 +576,13 @@ async function handleTabClick(e, tabId, data) {
     lastClickedTab = tabId;
     render();
   } else {
-    // Normal click - focus tab
+    // Normal click - activate tab without focusing its window (Enter does that)
     selectedTabs.clear();
     lastClickedTab = tabId;
     keyboardFocusedTabId = tabId;
 
-    const tab = await chrome.tabs.get(tabId);
-
-    // Activate the tab and focus its window
     await chrome.tabs.update(tabId, { active: true });
-    await chrome.windows.update(tab.windowId, { focused: true });
 
-    // Update active state (onActivated might not fire if tab was already active)
     Object.keys(tabData).forEach(id => {
       tabData[id].active = (parseInt(id) === tabId);
     });
