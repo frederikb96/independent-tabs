@@ -2,19 +2,11 @@
 // Branded Chrome and Edge ignore --load-extension, so this is the browser to test with.
 // Run: bunx playwright-core install chromium && bun run test:e2e
 import { afterAll, beforeAll, beforeEach, expect, setDefaultTimeout, test } from 'bun:test';
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { chromium } from 'playwright-core';
+import { launchExtension } from '../../scripts/launch-extension.js';
 
 setDefaultTimeout(30000);
 
-const root = resolve(import.meta.dir, '..', '..');
-// The extension is the top-level files plus icons/; everything else is tooling
-const isExtensionFile = (name) => name === 'icons'
-  || (!name.startsWith('.') && !['package.json', 'bun.lock'].includes(name) && statSync(join(root, name)).isFile());
-
-let tmp;
+let browser;
 let context;
 let extensionId;
 
@@ -58,22 +50,12 @@ async function stopWorker(p) {
 }
 
 beforeAll(async () => {
-  tmp = mkdtempSync(join(tmpdir(), 'independent-tabs-e2e-'));
-  const ext = join(tmp, 'extension');
-  mkdirSync(ext);
-  for (const name of readdirSync(root).filter(isExtensionFile)) cpSync(join(root, name), join(ext, name), { recursive: true });
-  context = await chromium.launchPersistentContext(join(tmp, 'profile'), {
-    channel: 'chromium',
-    headless: true,
-    args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
-  });
-  const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
-  extensionId = new URL(worker.url()).host;
+  browser = await launchExtension();
+  ({ context, extensionId } = browser);
 });
 
 afterAll(async () => {
-  await context?.close();
-  if (tmp) rmSync(tmp, { recursive: true, force: true });
+  await browser?.close();
 });
 
 beforeEach(async () => {

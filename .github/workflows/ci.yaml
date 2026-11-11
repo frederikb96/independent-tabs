@@ -1,63 +1,21 @@
+# Pull requests only: main takes nothing but rebase merges of a branch that passed `CI ok` with
+# the up-to-date requirement, so a run on main would repeat the tree that was just tested.
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Validate JSON files
-        run: |
-          for f in manifest.json renovate.json; do
-            echo "Validating $f..."
-            python3 -c "import json; json.load(open('$f'))"
-          done
-
-      - name: Validate manifest structure
-        run: |
-          python3 -c "
-          import json, sys
-          m = json.load(open('manifest.json'))
-          required = ['manifest_version', 'name', 'version', 'permissions', 'background']
-          missing = [k for k in required if k not in m]
-          if missing:
-              print(f'Missing required fields: {missing}')
-              sys.exit(1)
-          if m['manifest_version'] != 3:
-              print(f'Expected manifest_version 3, got {m[\"manifest_version\"]}')
-              sys.exit(1)
-          print(f'Manifest OK: {m[\"name\"]} v{m[\"version\"]}')
-          "
-
-      - name: Check vendored libraries exist
-        run: |
-          for f in sortable.min.js fuse.min.js; do
-            if [ ! -f "$f" ]; then
-              echo "Missing vendored library: $f"
-              exit 1
-            fi
-            echo "$f OK ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Verify extension files complete
-        run: |
-          for f in sidepanel.html sidepanel.js sidepanel.css service-worker.js tab-items.js \
-                   quicksearch.html quicksearch.js quicksearch.css \
-                   options.html options.js; do
-            if [ ! -f "$f" ]; then
-              echo "Missing extension file: $f"
-              exit 1
-            fi
-          done
-          echo "All extension files present"
-
-  test:
+  checks:
+    name: Checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -67,11 +25,45 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Vendored libraries match package.json
+        run: |
+          bun run vendor
+          git diff --exit-code -- fuse.min.js sortable.min.js
+
+      - name: Manifest, changelog and extension files agree
+        run: bun run check
+
       - name: Unit tests
         run: bun run test
 
+  e2e:
+    name: Browser tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
       - name: Install Chromium
-        run: bunx playwright-core install --with-deps chromium
+        run: bunx playwright-core install chromium
 
       - name: Browser tests
         run: bun run test:e2e
+
+  ci-ok:
+    name: CI ok
+    needs: [checks, e2e]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any required job did not succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*) exit 1 ;;
+          esac

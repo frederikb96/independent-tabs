@@ -4,79 +4,34 @@ on:
   push:
     tags:
       - "v*"
-      - "v*-rc*"
-      - "v*-beta*"
 
 jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Validate JSON files
-        run: |
-          for f in manifest.json renovate.json; do
-            python3 -c "import json; json.load(open('$f'))"
-          done
-
-      - name: Validate manifest structure
-        run: |
-          python3 -c "
-          import json, sys
-          m = json.load(open('manifest.json'))
-          required = ['manifest_version', 'name', 'version', 'permissions', 'background']
-          missing = [k for k in required if k not in m]
-          if missing:
-              print(f'Missing required fields: {missing}')
-              sys.exit(1)
-          print(f'Manifest OK: {m[\"name\"]} v{m[\"version\"]}')
-          "
-
   release:
-    needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
 
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2
 
-      - name: Verify manifest version matches tag
-        run: |
-          manifest_version=$(python3 -c "import json; print(json.load(open('manifest.json'))['version'])")
-          tag_version="${{ steps.version.outputs.version }}"
-          if [ "$manifest_version" != "$tag_version" ]; then
-            echo "Version mismatch: manifest=$manifest_version tag=$tag_version"
-            exit 1
-          fi
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
-      - name: Build extension zip
-        run: |
-          zip -r "independent-tabs-v${{ steps.version.outputs.version }}.zip" \
-            manifest.json \
-            service-worker.js tab-items.js \
-            sidepanel.html sidepanel.js sidepanel.css \
-            quicksearch.html quicksearch.js quicksearch.css \
-            options.html options.js \
-            sortable.min.js fuse.min.js \
-            icons/ \
-            LICENSE
+      - name: Tag, manifest and changelog must agree
+        run: bun scripts/check-release.js "$GITHUB_REF_NAME"
 
-      - name: Determine prerelease
-        id: prerelease
-        run: |
-          if echo "${{ github.ref_name }}" | grep -qE '(-rc|-beta|-alpha)'; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Unit tests
+        run: bun run test
+
+      - name: Cut the release notes from the changelog
+        run: bun scripts/extract-changelog.js "$GITHUB_REF_NAME" > release-notes.md
+
+      - name: Build the extension zip
+        run: bun scripts/package.js "independent-tabs-$GITHUB_REF_NAME.zip"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: independent-tabs-v${{ steps.version.outputs.version }}.zip
-          prerelease: ${{ steps.prerelease.outputs.prerelease }}
-          generate_release_notes: true
+          files: independent-tabs-${{ github.ref_name }}.zip
+          body_path: release-notes.md
