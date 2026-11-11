@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Escape in the popup's search field closed the popup instead of clearing the search
 - Restoring a session from quick search could overwrite changes made to the list since quick search opened
 
-## [1.10.0] - 2025-02-08
+## [1.10.0] - 2026-02-08
 
 ### Added
 
@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Click on tab activates without stealing window focus (Enter focuses window)
 
-## [1.9.0] - 2025-02-08
+## [1.9.0] - 2026-02-08
 
 ### Added
 
@@ -61,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Multi-instance race conditions during session restore
 
-## [1.8.0] - 2025-02-07
+## [1.8.0] - 2025-12-15
 
 ### Added
 
@@ -69,37 +69,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Session search across name and tab titles
 - Match count display during search
 
-## [1.7.1] - 2025-02-07
+## [1.7.1] - 2025-12-15
 
 ### Added
 
 - Sort direction toggle for sessions (ascending/descending)
 
-## [1.7.0] - 2025-02-07
+## [1.7.0] - 2025-12-15
 
 ### Added
 
 - Session sorting by modified date, created date, or name
 
-## [1.6.1] - 2025-02-06
+## [1.6.1] - 2025-12-15
 
 ### Fixed
 
 - Default autosave checkbox not updating after backup restore
 
-## [1.6.0] - 2025-02-06
+## [1.6.0] - 2025-12-15
 
 ### Added
 
 - Multi-window support (tabs from all normal browser windows)
 
-## [1.5.0] - 2025-01-15
+## [1.5.0] - 2025-12-15
 
 ### Changed
 
 - Refined tab query to exclude PWAs, apps, and popups
 
-## [1.4.0] - 2025-01-10
+## [1.4.0] - 2025-12-14
 
 ### Added
 
@@ -111,7 +111,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Race condition in tab removal causing empty groups to persist
 - Group close leaving empty group (copy tabs array fix)
 
-## [1.3.0] - 2024-12-14
+## [1.3.0] - 2025-12-14
 
 ### Added
 
@@ -124,7 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Duplicate tabs when restoring sessions
 - Import confirm dialog being auto-dismissed
 
-## [1.2.0] - 2024-12-13
+## [1.2.0] - 2025-12-14
 
 ### Added
 
@@ -132,13 +132,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keyboard navigation with arrow keys and space for rename
 - Tab renaming via right-click context menu
 
-## [1.1.0] - 2024-12-12
+## [1.1.0] - 2025-12-14
 
 ### Added
 
 - Keyboard shortcut to toggle side panel
 
-## [1.0.0] - 2024-12-12
+## [1.0.0] - 2025-12-14
 
 ### Added
 
