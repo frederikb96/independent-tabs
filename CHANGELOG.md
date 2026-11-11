@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.1] - 2026-11-11
+
+### Changed
+
+- The side panel reopens after 100 ms by default instead of 500 ms; the pause setting is no longer marked experimental
+
 ## [1.12.0] - 2026-11-11
 
 ### Added

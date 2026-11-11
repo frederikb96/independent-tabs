@@ -229,6 +229,12 @@ async function sidePanelId(p) {
 test('Alt+A opens the side panel and opens it again when it is open, Alt+Y closes it', async () => {
   const p = await context.newPage();
   await p.goto(page('shortcuts'));
+  const d = await driver();
+  await d.evaluate(async () => {
+    const { settings = {} } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, panelReopenPause: 500 } });
+  });
+  await d.close();
   expect(await sidePanelId(p)).toBeUndefined();
 
   await shortcut(p, 'Alt+A');

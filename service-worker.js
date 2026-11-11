@@ -11,7 +11,7 @@ importScripts('tab-items.js');
 const DEFAULT_SETTINGS = {
   newTabPosition: 'bottom',
   panelShortcutToggles: false,
-  panelReopenPause: 500,  // ms the side panel stays closed before the shortcut opens it again
+  panelReopenPause: 100,  // ms the side panel stays closed before the shortcut opens it again
 };
 
 // One storage read-modify-write at a time; events arriving together would otherwise each read
