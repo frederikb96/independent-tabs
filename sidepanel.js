@@ -56,6 +56,7 @@ async function init() {
     activeTab = tabs.find(t => t.active && t.windowId === lastFocused.id);
   }
   if (activeTab) keyboardFocusedTabId = activeTab.id;
+  if (!isPopupWindow) connectToWorker(currentWin.id);
 
   render();
   setupEventListeners();
@@ -82,6 +83,18 @@ async function init() {
       }
     });
   }
+}
+
+// Tells the service worker that this window's side panel is open, which the panel shortcuts
+// depend on, and keeps the worker running meanwhile. A worker restart drops the port.
+function connectToWorker(windowId) {
+  const port = chrome.runtime.connect({ name: 'sidepanel' });
+  port.postMessage({ windowId });
+  const ping = setInterval(() => port.postMessage({}), 20000);
+  port.onDisconnect.addListener(() => {
+    clearInterval(ping);
+    connectToWorker(windowId);
+  });
 }
 
 function extractTabData(tab) {
@@ -1120,6 +1133,8 @@ function setupKeyboardNavigation() {
         const focusedEl = document.querySelector(`.session-item[data-session-id="${keyboardFocusedSessionId}"]`);
         if (focusedEl) focusedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         document.getElementById('sessions-list').focus();
+      } else if (e.key === 'ArrowUp' && !e.shiftKey && getVisibleTabIds()[0] === keyboardFocusedTabId) {
+        document.getElementById('search-input').focus();
       } else {
         await moveTabCursor(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey);
       }
@@ -1131,6 +1146,7 @@ function setupKeyboardNavigation() {
       document.getElementById('search-input').focus();
     } else if (e.key === 'Enter' && currentView === 'tabs' && keyboardFocusedTabId !== null) {
       e.preventDefault();
+      clearSearch();
       await openFocusedTab();
     } else if (e.key === 'Enter' && currentView === 'sessions' && keyboardFocusedSessionId) {
       // Enter restores the focused session
@@ -1279,6 +1295,13 @@ function setupViewToggle() {
   });
 }
 
+// Empties the search field; the caller renders
+function clearSearch() {
+  searchQuery = '';
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-clear').classList.add('hidden');
+}
+
 function switchView(view) {
   currentView = view;
   keyboardFocusedSessionId = null;
@@ -1294,12 +1317,7 @@ function switchView(view) {
   // Update search placeholder based on view
   searchInput.placeholder = view === 'tabs' ? 'Search tabs...' : 'Search sessions...';
 
-  // Clear search when switching views
-  if (searchQuery) {
-    searchQuery = '';
-    searchInput.value = '';
-    document.getElementById('search-clear').classList.add('hidden');
-  }
+  clearSearch();  // a search belongs to one view
 
   if (view === 'tabs') {
     tabList.classList.remove('hidden');
@@ -1332,9 +1350,7 @@ function setupSearch() {
   });
 
   searchClear.addEventListener('click', () => {
-    searchQuery = '';
-    searchInput.value = '';
-    searchClear.classList.add('hidden');
+    clearSearch();
     searchInput.focus();
 
     if (currentView === 'tabs') {
@@ -1344,25 +1360,23 @@ function setupSearch() {
     }
   });
 
-  // Arrows move through the matches, Enter opens one, Escape clears the search
+  // Arrow Down moves into the list, onto the first match after typing; Enter opens the match
+  // under the cursor, Escape clears the search
   searchInput.addEventListener('keydown', async (e) => {
-    if (currentView === 'tabs' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    if (currentView === 'tabs' && e.key === 'ArrowDown') {
       e.preventDefault();
-      await moveTabCursor(e.key === 'ArrowDown' ? 1 : -1, false);
+      searchInput.blur();
+      if (!getVisibleTabIds().includes(keyboardFocusedTabId)) await moveTabCursor(-Infinity, false);
     } else if (currentView === 'tabs' && e.key === 'Enter') {
       e.preventDefault();
       if (!getVisibleTabIds().includes(keyboardFocusedTabId)) return;
-      searchQuery = '';
-      searchInput.value = '';
-      searchClear.classList.add('hidden');
+      clearSearch();
       searchInput.blur();
       await openFocusedTab();
     } else if (e.key === 'Escape') {
       if (searchQuery) {
         e.stopPropagation();  // a first Escape only clears the search, also in the popup window
-        searchQuery = '';
-        searchInput.value = '';
-        searchClear.classList.add('hidden');
+        clearSearch();
         if (currentView === 'tabs') {
           render();
         } else {

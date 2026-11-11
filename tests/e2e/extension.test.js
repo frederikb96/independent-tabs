@@ -152,7 +152,7 @@ test('in the side panel, arrows move the cursor without activating, Enter activa
   expect(await active()).toBe(titles.at(-2));
 });
 
-test('typing a search, arrows walk the matches only and Enter opens one', async () => {
+test('typing a search, Arrow Down moves into the matches, arrows walk them only and Enter opens one', async () => {
   const d = await driver();
   await d.evaluate(async (urls) => {
     for (const url of urls) await chrome.tabs.create({ url, active: false });
@@ -165,6 +165,8 @@ test('typing a search, arrows walk the matches only and Enter opens one', async 
   const cursor = () => list.$eval('.tab-item.keyboard-focused .title', e => e.textContent);
   expect(await cursor()).toBe('alpha one');
   await list.keyboard.press('ArrowDown');
+  expect(await cursor()).toBe('alpha one');
+  await list.keyboard.press('ArrowDown');
   expect(await cursor()).toBe('alpha two');
   await list.keyboard.press('ArrowDown');
   expect(await cursor()).toBe('alpha two');
@@ -174,4 +176,87 @@ test('typing a search, arrows walk the matches only and Enter opens one', async 
   const [tab] = await list.evaluate(() => chrome.tabs.query({ title: 'alpha two' }));
   expect(tab.active).toBe(true);
   expect(await list.inputValue('#search-input')).toBe('');
+});
+
+test('Arrow Up on the first entry moves into the search field, Arrow Down back into the list', async () => {
+  const d = await driver();
+  await d.evaluate(async (urls) => {
+    for (const url of urls) await chrome.tabs.create({ url, active: false });
+  }, ['data:text/html,<title>gamma one</title>', 'data:text/html,<title>delta</title>', 'data:text/html,<title>gamma two</title>']);
+  await sleep(300);
+
+  const list = await openList();
+  const cursor = () => list.$eval('.tab-item.keyboard-focused .title', e => e.textContent);
+  const inSearch = () => list.evaluate(() => document.activeElement.id === 'search-input');
+  await list.keyboard.press('/');
+  await list.keyboard.type('gamma');
+  await list.keyboard.press('ArrowDown');
+  expect(await inSearch()).toBe(false);
+  expect(await cursor()).toBe('gamma one');
+  await list.keyboard.press('ArrowDown');
+  expect(await cursor()).toBe('gamma two');
+  await list.keyboard.press('ArrowUp');
+  await list.keyboard.press('ArrowUp');
+  expect(await inSearch()).toBe(true);
+  expect(await list.inputValue('#search-input')).toBe('gamma');
+  await list.keyboard.press('ArrowDown');
+  expect(await inSearch()).toBe(false);
+  expect(await cursor()).toBe('gamma one');
+});
+
+// Presses a chord the way the browser's shortcut handling sees it; page.keyboard never fires a command
+async function shortcut(p, chord) {
+  const [key] = chord.split('+').slice(-1);
+  const code = key.toUpperCase().charCodeAt(0);
+  const cdp = await context.newCDPSession(p);
+  for (const type of ['rawKeyDown', 'keyUp']) {
+    await cdp.send('Input.dispatchKeyEvent', {
+      type, modifiers: 1, key: key.toUpperCase(), code: `Key${key.toUpperCase()}`,
+      windowsVirtualKeyCode: code, nativeVirtualKeyCode: code, commands: [],
+    });
+  }
+  await cdp.detach();
+  await sleep(1000);
+}
+
+async function sidePanelId(p) {
+  const cdp = await context.newCDPSession(p);
+  const { targetInfos } = await cdp.send('Target.getTargets');
+  await cdp.detach();
+  return targetInfos.find(t => t.url === `chrome-extension://${extensionId}/sidepanel.html` && t.type === 'page')?.targetId;
+}
+
+test('Alt+A opens the side panel and opens it again when it is open, Alt+Y closes it', async () => {
+  const p = await context.newPage();
+  await p.goto(page('shortcuts'));
+  expect(await sidePanelId(p)).toBeUndefined();
+
+  await shortcut(p, 'Alt+A');
+  const first = await sidePanelId(p);
+  expect(first).toBeDefined();
+  await shortcut(p, 'Alt+A');
+  const second = await sidePanelId(p);
+  expect(second).toBeDefined();
+  expect(second).not.toBe(first);
+
+  await shortcut(p, 'Alt+Y');
+  expect(await sidePanelId(p)).toBeUndefined();
+  await shortcut(p, 'Alt+Y');
+  expect(await sidePanelId(p)).toBeUndefined();
+});
+
+test('with the toggle setting, Alt+A closes an open side panel', async () => {
+  const p = await context.newPage();
+  await p.goto(page('toggle'));
+  const d = await driver();
+  await d.evaluate(async () => {
+    const { settings = {} } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, panelShortcutToggles: true } });
+  });
+  await d.close();
+
+  await shortcut(p, 'Alt+A');
+  expect(await sidePanelId(p)).toBeDefined();
+  await shortcut(p, 'Alt+A');
+  expect(await sidePanelId(p)).toBeUndefined();
 });

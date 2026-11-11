@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const defaultAutosaveCheckbox = document.getElementById('default-autosave');
   const autoSaveOnGroupCreationCheckbox = document.getElementById('autosave-on-group-creation');
   const popupCloseOnRefocusCheckbox = document.getElementById('popup-close-on-refocus');
+  const panelShortcutTogglesCheckbox = document.getElementById('panel-shortcut-toggles');
   const savedIndicator = document.getElementById('saved');
   const exportBtn = document.getElementById('export-btn');
   const importBtn = document.getElementById('import-btn');
@@ -17,6 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   defaultAutosaveCheckbox.checked = settings.defaultAutoSave || false;
   autoSaveOnGroupCreationCheckbox.checked = settings.autoSaveOnGroupCreation || false;
   popupCloseOnRefocusCheckbox.checked = settings.popupCloseOnRefocus || false;
+  panelShortcutTogglesCheckbox.checked = settings.panelShortcutToggles || false;
 
   // Save settings helper
   async function saveSettings(updates) {
@@ -41,6 +43,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   popupCloseOnRefocusCheckbox.addEventListener('change', async (e) => {
     await saveSettings({ popupCloseOnRefocus: e.target.checked });
+  });
+
+  panelShortcutTogglesCheckbox.addEventListener('change', async (e) => {
+    await saveSettings({ panelShortcutToggles: e.target.checked });
   });
 
   // Export backup
@@ -128,6 +134,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       defaultAutosaveCheckbox.checked = newSettings.defaultAutoSave || false;
       autoSaveOnGroupCreationCheckbox.checked = newSettings.autoSaveOnGroupCreation || false;
       popupCloseOnRefocusCheckbox.checked = newSettings.popupCloseOnRefocus || false;
+      panelShortcutTogglesCheckbox.checked = newSettings.panelShortcutToggles || false;
 
       // Show success with alert to ensure visibility
       const restoredItems = Array.isArray(verified.items) ? verified.items.length : 0;
