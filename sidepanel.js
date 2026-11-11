@@ -86,14 +86,17 @@ async function init() {
 }
 
 // Tells the service worker that this window's side panel is open, which the panel shortcuts
-// depend on, and keeps the worker running meanwhile. A worker restart drops the port.
+// depend on, and keeps the worker running meanwhile. A worker restart drops the port; so does
+// a reload of the extension, after which this document's chrome.runtime is gone (runtime.id
+// is undefined) and a reconnect would throw.
 function connectToWorker(windowId) {
   const port = chrome.runtime.connect({ name: 'sidepanel' });
   port.postMessage({ windowId });
   const ping = setInterval(() => port.postMessage({}), 20000);
   port.onDisconnect.addListener(() => {
     clearInterval(ping);
-    connectToWorker(windowId);
+    void chrome.runtime.lastError;  // reading it keeps a failed connection out of the error log
+    if (chrome.runtime?.id) connectToWorker(windowId);
   });
 }
 

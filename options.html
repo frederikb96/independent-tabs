@@ -49,7 +49,7 @@
       font-weight: 500;
     }
 
-    select {
+    select, input[type="number"] {
       width: 100%;
       padding: 8px 12px;
       border: 1px solid var(--border-color);
@@ -60,7 +60,7 @@
       cursor: pointer;
     }
 
-    select:focus {
+    select:focus, input[type="number"]:focus {
       outline: none;
       border-color: var(--accent-color);
     }
@@ -237,6 +237,12 @@
         <p class="hint">When enabled, the side panel shortcut (Alt+A) toggles the panel. When disabled, it opens the panel or, when it is open, puts keyboard focus back into it; Alt+Y closes it.</p>
       </label>
     </div>
+  </div>
+
+  <div class="setting">
+    <label for="panel-reopen-pause">Pause before the side panel reopens (ms)</label>
+    <input type="number" id="panel-reopen-pause" min="0" max="5000" step="50">
+    <p class="hint">Experimental. To put keyboard focus back into an open panel, Alt+A closes it, waits this long and opens it again. Too short a pause and the browser may leave the focus in the page; 0 reopens at once.</p>
   </div>
 
   <div id="saved" class="saved">Settings saved</div>

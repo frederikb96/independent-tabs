@@ -205,7 +205,7 @@ test('Arrow Up on the first entry moves into the search field, Arrow Down back i
 });
 
 // Presses a chord the way the browser's shortcut handling sees it; page.keyboard never fires a command
-async function shortcut(p, chord) {
+async function shortcut(p, chord, settle = 1000) {
   const [key] = chord.split('+').slice(-1);
   const code = key.toUpperCase().charCodeAt(0);
   const cdp = await context.newCDPSession(p);
@@ -216,7 +216,7 @@ async function shortcut(p, chord) {
     });
   }
   await cdp.detach();
-  await sleep(1000);
+  await sleep(settle);
 }
 
 async function sidePanelId(p) {
@@ -234,7 +234,11 @@ test('Alt+A opens the side panel and opens it again when it is open, Alt+Y close
   await shortcut(p, 'Alt+A');
   const first = await sidePanelId(p);
   expect(first).toBeDefined();
-  await shortcut(p, 'Alt+A');
+
+  // The open panel closes at once and comes back as a new document only after the pause
+  await shortcut(p, 'Alt+A', 250);
+  expect(await sidePanelId(p)).toBeUndefined();
+  await sleep(1000);
   const second = await sidePanelId(p);
   expect(second).toBeDefined();
   expect(second).not.toBe(first);

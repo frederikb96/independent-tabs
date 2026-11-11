@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const autoSaveOnGroupCreationCheckbox = document.getElementById('autosave-on-group-creation');
   const popupCloseOnRefocusCheckbox = document.getElementById('popup-close-on-refocus');
   const panelShortcutTogglesCheckbox = document.getElementById('panel-shortcut-toggles');
+  const panelReopenPauseInput = document.getElementById('panel-reopen-pause');
   const savedIndicator = document.getElementById('saved');
   const exportBtn = document.getElementById('export-btn');
   const importBtn = document.getElementById('import-btn');
@@ -19,6 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   autoSaveOnGroupCreationCheckbox.checked = settings.autoSaveOnGroupCreation || false;
   popupCloseOnRefocusCheckbox.checked = settings.popupCloseOnRefocus || false;
   panelShortcutTogglesCheckbox.checked = settings.panelShortcutToggles || false;
+  panelReopenPauseInput.value = settings.panelReopenPause;
 
   // Save settings helper
   async function saveSettings(updates) {
@@ -47,6 +49,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   panelShortcutTogglesCheckbox.addEventListener('change', async (e) => {
     await saveSettings({ panelShortcutToggles: e.target.checked });
+  });
+
+  panelReopenPauseInput.addEventListener('change', async (e) => {
+    const pause = Math.min(Math.max(Math.round(Number(e.target.value)) || 0, 0), 5000);
+    e.target.value = pause;
+    await saveSettings({ panelReopenPause: pause });
   });
 
   // Export backup
@@ -135,6 +143,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       autoSaveOnGroupCreationCheckbox.checked = newSettings.autoSaveOnGroupCreation || false;
       popupCloseOnRefocusCheckbox.checked = newSettings.popupCloseOnRefocus || false;
       panelShortcutTogglesCheckbox.checked = newSettings.panelShortcutToggles || false;
+      panelReopenPauseInput.value = newSettings.panelReopenPause ?? '';
 
       // Show success with alert to ensure visibility
       const restoredItems = Array.isArray(verified.items) ? verified.items.length : 0;

@@ -61,8 +61,10 @@ try {
     ...(entry.session && { linkedSessionId: entry.session, autoSave: sessions()[entry.session].autoSave }),
   });
   await driver.evaluate(async (data) => {
+    // The install wrote the defaults of the settings the seed does not name; keep them
+    const { settings: installed = {} } = await chrome.storage.local.get('settings');
     await chrome.storage.local.clear();
-    await chrome.storage.local.set(data);
+    await chrome.storage.local.set({ ...data, settings: { ...installed, ...data.settings } });
     const [tab] = await chrome.tabs.query({ active: true, windowType: 'normal' });
     return tab;
   }, {
