@@ -48,9 +48,9 @@ Alt+Q opens the same list in a popup window. It remembers its size, activates ea
 ## Settings
 
 <p align="center">
-  <img src="images/options.png" alt="The settings page with the new tab position, three checkboxes and the backup buttons" width="60%">
+  <img src="images/options.png" alt="The settings page with the new tab position, four checkboxes and the backup buttons" width="60%">
 </p>
 
 - New tab position: top or bottom of the list.
-- Auto-save groups by default, auto-save newly created groups, and whether the popup shortcut closes a focused popup.
+- Auto-save groups by default, auto-save newly created groups, whether the popup shortcut closes a focused popup, and whether the side panel shortcut closes an open panel.
 - **Export Backup** writes tab order, groups, custom names, saved sessions and settings to a JSON file; **Import Backup** replaces all current data with such a file after a confirmation.

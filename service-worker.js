@@ -104,6 +104,63 @@ chrome.windows.onRemoved.addListener(async (windowId) => {
   }
 });
 
+// Side panel shortcuts. A shortcut's user gesture, which sidePanel.open needs, lasts only until the
+// handler's first await, so this listener decides from state it already holds: the windows whose
+// panel is open and the settings, both kept current below.
+const openPanels = new Map();  // windowId -> connected panel pages
+let panelShortcutToggles = false;
+chrome.storage.local.get('settings').then(({ settings }) => {
+  panelShortcutToggles = settings?.panelShortcutToggles ?? false;
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.settings) panelShortcutToggles = changes.settings.newValue?.panelShortcutToggles ?? false;
+});
+
+// Each open side panel holds a port and pings over it, which keeps the worker, and with it the
+// state above, alive while a panel is open.
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'sidepanel') return;
+  let windowId;
+  port.onMessage.addListener((msg) => {
+    if (msg.windowId === undefined || windowId !== undefined) return;
+    windowId = msg.windowId;
+    openPanels.set(windowId, (openPanels.get(windowId) ?? 0) + 1);
+  });
+  port.onDisconnect.addListener(() => {
+    if (windowId === undefined) return;
+    const count = openPanels.get(windowId) - 1;
+    if (count > 0) openPanels.set(windowId, count); else openPanels.delete(windowId);
+  });
+});
+
+const logError = (err) => console.error('Independent Tabs:', err);
+
+// sidePanel.open on a panel that is already open leaves keyboard focus where it is, in the page
+// after a tab was activated. Disabling the panel closes it, and the panel opened again takes
+// keyboard focus. Disabling closes the panels of all windows, so those open elsewhere open again.
+function reopenPanel(windowId) {
+  chrome.sidePanel.setOptions({ enabled: false }).catch(logError);
+  chrome.sidePanel.setOptions({ enabled: true }).catch(logError);
+  chrome.sidePanel.open({ windowId }).catch(logError);
+  for (const other of openPanels.keys()) {
+    if (other !== windowId) chrome.sidePanel.open({ windowId: other }).catch(logError);
+  }
+}
+
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (!tab) return;
+  const { windowId } = tab;
+  if (command === 'focus-panel') {
+    if (panelShortcutToggles && openPanels.has(windowId)) {
+      chrome.sidePanel.close({ windowId }).catch(logError);
+    } else {
+      reopenPanel(windowId);
+    }
+  } else if (command === 'close-panel') {
+    chrome.sidePanel.close({ windowId }).catch(logError);
+  }
+});
+
 chrome.commands.onCommand.addListener(async (command) => {
   if (command === 'open-quicksearch') {
     const { quicksearchWindowId } = await chrome.storage.session.get('quicksearchWindowId');
