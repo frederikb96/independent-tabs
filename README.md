@@ -14,8 +14,8 @@ A side panel that lists your tabs in an order you choose, independent from the b
 </tr>
 </table>
 
-[![CI](https://github.com/frederikb96/independent-tabs/actions/workflows/ci.yaml/badge.svg)](https://github.com/frederikb96/independent-tabs/actions/workflows/ci.yaml)
-[![Release](https://img.shields.io/github/v/release/frederikb96/independent-tabs)](https://github.com/frederikb96/independent-tabs/releases)
+[![CI](https://github.com/frederikberg/independent-tabs/actions/workflows/ci.yaml/badge.svg)](https://github.com/frederikberg/independent-tabs/actions/workflows/ci.yaml)
+[![Release](https://img.shields.io/github/v/release/frederikberg/independent-tabs)](https://github.com/frederikberg/independent-tabs/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Tabs show up in the panel in the order they were opened, and stay where you drag them. Group them, name them, save a group as a session and open it again later, or jump to any tab from a quick search with the keyboard.
@@ -51,7 +51,7 @@ A Chromium-based browser with the side panel API. It has run in Microsoft Edge, 
 
 There is no store listing. Load it unpacked:
 
-- Download the zip of the [latest release](https://github.com/frederikb96/independent-tabs/releases/latest) and extract it to a folder that stays where it is, or clone this repository.
+- Download the zip of the [latest release](https://github.com/frederikberg/independent-tabs/releases/latest) and extract it to a folder that stays where it is, or clone this repository.
 - Open `chrome://extensions` (`edge://extensions` in Edge) and turn on **Developer mode**.
 - Click **Load unpacked** and select the folder.
 - Click the extension's toolbar button, or press Alt+A, to open the side panel.
