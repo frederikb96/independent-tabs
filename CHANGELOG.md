@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Home/End jump to the first/last tab; `/` focuses the search, where Arrow Up/Down walk the matches and Enter opens one
+- The active tab is shown in bold
+- Unit tests for the order logic and browser tests in Playwright's bundled Chromium, run in CI
+
+### Changed
+
+- Side panel: Arrow Up/Down move the cursor without activating the tab, Enter activates it. Activating a tab moves keyboard focus from the side panel into the page, which broke arrow navigation after the first step. The popup window keeps activating on every arrow key
+- More compact layout: the settings button sits beside the search field instead of in a header row, tab rows are denser
+
+### Fixed
+
+- Tabs opened while no panel or popup was open joined the list in the browser's tab strip order instead of the order they were opened in; the service worker now tracks new and closed tabs into the list, and tabs missing from it join sorted by opening order
+- A tab opened from a grouped tab joins that group also while no panel is open
+- Arrow keys during a search walked over tabs the search hides
+- Escape in the popup's search field closed the popup instead of clearing the search
+- Restoring a session from quick search could overwrite changes made to the list since quick search opened
+
 ## [1.10.0] - 2025-02-08
 
 ### Added

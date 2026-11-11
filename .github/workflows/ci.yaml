@@ -47,7 +47,7 @@ jobs:
 
       - name: Verify extension files complete
         run: |
-          for f in sidepanel.html sidepanel.js sidepanel.css service-worker.js \
+          for f in sidepanel.html sidepanel.js sidepanel.css service-worker.js tab-items.js \
                    quicksearch.html quicksearch.js quicksearch.css \
                    options.html options.js; do
             if [ ! -f "$f" ]; then
@@ -56,3 +56,22 @@ jobs:
             fi
           done
           echo "All extension files present"
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Unit tests
+        run: bun run test
+
+      - name: Install Chromium
+        run: bunx playwright-core install --with-deps chromium
+
+      - name: Browser tests
+        run: bun run test:e2e

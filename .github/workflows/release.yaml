@@ -57,7 +57,7 @@ jobs:
         run: |
           zip -r "independent-tabs-v${{ steps.version.outputs.version }}.zip" \
             manifest.json \
-            service-worker.js \
+            service-worker.js tab-items.js \
             sidepanel.html sidepanel.js sidepanel.css \
             quicksearch.html quicksearch.js quicksearch.css \
             options.html options.js \

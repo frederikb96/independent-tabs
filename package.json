@@ -1,0 +1,12 @@
+{
+  "name": "independent-tabs",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "bun test tests/unit",
+    "test:e2e": "bun test tests/e2e"
+  },
+  "devDependencies": {
+    "playwright-core": "1.63.0"
+  }
+}
