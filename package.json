@@ -6,7 +6,8 @@
     "test": "bun test tests/unit",
     "test:e2e": "bun test tests/e2e",
     "check": "bun scripts/check-release.js",
-    "vendor": "bun scripts/vendor.js"
+    "vendor": "bun scripts/vendor.js",
+    "screenshots": "bun scripts/screenshots/capture.js"
   },
   "devDependencies": {
     "fuse.js": "7.1.0",
