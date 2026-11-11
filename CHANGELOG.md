@@ -12,12 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Alt+Y closes the side panel
 - Setting *Side panel shortcut closes an open panel* restores Alt+A as a toggle
 - Arrow Up on the first tab moves into the search field
+- Setting *Pause before the side panel reopens* (experimental): how long Alt+A keeps an open panel closed before it opens again
 
 ### Changed
 
-- Alt+A on an open side panel puts keyboard focus back into it instead of closing it, so the arrow keys work again after a tab took focus. It does so by reopening the panel. The oldest supported browser version is 141, the first with `sidePanel.close`
+- Alt+A on an open side panel puts keyboard focus back into it instead of closing it, so the arrow keys work again after a tab took focus. It does so by closing the panel and opening it again after a short pause; opened too early, the new panel does not always get the focus. The oldest supported browser version is 141, the first with `sidePanel.close`
 - Arrow Down in the search field moves into the list onto the first match; the arrows walk the matches from there. Enter in the list clears an active search, like Enter in the search field
 - New toolbar icon from the logo
+
+### Fixed
+
+- The side panel does not try to reconnect to the service worker after the extension was reloaded, which logged an error
 
 ## [1.11.0] - 2026-11-11
 

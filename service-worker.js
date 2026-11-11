@@ -6,7 +6,13 @@ importScripts('tab-items.js');
 // Tab tracking lives here rather than in the pages: the worker is woken for every tab event,
 // while a side panel or popup only sees the tabs created while it is open.
 
-const DEFAULT_SETTINGS = { newTabPosition: 'bottom' };
+// The one source of each setting's default; an install or update writes the missing ones into
+// storage, so every reader finds a value there.
+const DEFAULT_SETTINGS = {
+  newTabPosition: 'bottom',
+  panelShortcutToggles: false,
+  panelReopenPause: 500,  // ms the side panel stays closed before the shortcut opens it again
+};
 
 // One storage read-modify-write at a time; events arriving together would otherwise each read
 // the same order and overwrite each other's additions.
@@ -36,7 +42,7 @@ chrome.runtime.onInstalled.addListener(() => serialized(async () => {
   await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
   const { settings, items, tabOrder } = await chrome.storage.local.get(['settings', 'items', 'tabOrder']);
-  if (!settings) await chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
+  await chrome.storage.local.set({ settings: { ...DEFAULT_SETTINGS, ...settings } });
   if (Array.isArray(tabOrder)) {
     // Order format of the first releases: a flat list of tab IDs
     if (!items || items.length === 0) await chrome.storage.local.set({ items: tabOrder });
@@ -108,12 +114,12 @@ chrome.windows.onRemoved.addListener(async (windowId) => {
 // handler's first await, so this listener decides from state it already holds: the windows whose
 // panel is open and the settings, both kept current below.
 const openPanels = new Map();  // windowId -> connected panel pages
-let panelShortcutToggles = false;
-chrome.storage.local.get('settings').then(({ settings }) => {
-  panelShortcutToggles = settings?.panelShortcutToggles ?? false;
+let cachedSettings = DEFAULT_SETTINGS;
+chrome.storage.local.get('settings').then((stored) => {
+  cachedSettings = { ...DEFAULT_SETTINGS, ...stored.settings };
 });
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.settings) panelShortcutToggles = changes.settings.newValue?.panelShortcutToggles ?? false;
+  if (area === 'local' && changes.settings) cachedSettings = { ...DEFAULT_SETTINGS, ...changes.settings.newValue };
 });
 
 // Each open side panel holds a port and pings over it, which keeps the worker, and with it the
@@ -135,11 +141,22 @@ chrome.runtime.onConnect.addListener((port) => {
 
 const logError = (err) => console.error('Independent Tabs:', err);
 
+// Blocks the worker for `ms`. The browser keeps processing the API calls made before, so this
+// spaces them out in time while the user gesture, a flag held for the synchronous run of the
+// handler, stays valid; Atomics.wait is not allowed in a service worker.
+function pause(ms) {
+  const end = performance.now() + ms;
+  while (performance.now() < end);
+}
+
 // sidePanel.open on a panel that is already open leaves keyboard focus where it is, in the page
 // after a tab was activated. Disabling the panel closes it, and the panel opened again takes
-// keyboard focus. Disabling closes the panels of all windows, so those open elsewhere open again.
+// keyboard focus. The pause lets the browser finish closing the panel first: opened while the
+// old panel is still on its way out, the new one does not reliably get the focus. Disabling
+// closes the panels of all windows, so those open elsewhere open again.
 function reopenPanel(windowId) {
   chrome.sidePanel.setOptions({ enabled: false }).catch(logError);
+  if (openPanels.has(windowId)) pause(cachedSettings.panelReopenPause);
   chrome.sidePanel.setOptions({ enabled: true }).catch(logError);
   chrome.sidePanel.open({ windowId }).catch(logError);
   for (const other of openPanels.keys()) {
@@ -151,7 +168,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
   if (!tab) return;
   const { windowId } = tab;
   if (command === 'focus-panel') {
-    if (panelShortcutToggles && openPanels.has(windowId)) {
+    if (cachedSettings.panelShortcutToggles && openPanels.has(windowId)) {
       chrome.sidePanel.close({ windowId }).catch(logError);
     } else {
       reopenPanel(windowId);

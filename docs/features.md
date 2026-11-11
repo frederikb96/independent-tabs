@@ -53,4 +53,5 @@ Alt+Q opens the same list in a popup window. It remembers its size, activates ea
 
 - New tab position: top or bottom of the list.
 - Auto-save groups by default, auto-save newly created groups, whether the popup shortcut closes a focused popup, and whether the side panel shortcut closes an open panel.
+- Pause before the side panel reopens (experimental): how long Alt+A keeps an open panel closed before opening it again with keyboard focus. Lengthen it when the focus stays in the page.
 - **Export Backup** writes tab order, groups, custom names, saved sessions and settings to a JSON file; **Import Backup** replaces all current data with such a file after a confirmation.

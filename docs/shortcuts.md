@@ -6,7 +6,7 @@ Active in any browser window; change them at `chrome://extensions/shortcuts`.
 
 | Shortcut | Action |
 |----------|--------|
-| Alt+A | Open the side panel; when it is open, put keyboard focus back into it, for instance after Enter activated a tab. With the setting *Side panel shortcut closes an open panel* on, a press on an open panel closes it instead |
+| Alt+A | Open the side panel; when it is open, put keyboard focus back into it, for instance after Enter activated a tab: the panel closes and opens again after the pause set in the settings. With the setting *Side panel shortcut closes an open panel* on, a press on an open panel closes it instead |
 | Alt+Y | Close the side panel |
 | Alt+Q | Open the list in a popup window, or bring it to the front. With the setting *Popup shortcut closes when focused* on, a second press closes it |
 | Alt+S | Open the quick search; a second press while it is focused closes it |
