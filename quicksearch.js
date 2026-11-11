@@ -259,7 +259,7 @@ async function restoreSession(sessionId) {
   const session = savedSessions[sessionId];
   if (!session || session.tabs.length === 0) return;
 
-  // Signal other instances to skip onCreated
+  // Tell the service worker not to add the restored tabs to the list on their own
   await chrome.storage.session.set({ restoreInProgress: Date.now() });
 
   const BATCH_SIZE = 5;
@@ -308,11 +308,13 @@ async function restoreSession(sessionId) {
     linkedSessionId: sessionId
   };
 
-  items.push(group);
+  // Tabs opened or closed while this window was open changed the stored order since init
+  const stored = await chrome.storage.local.get(['items', 'customNames']);
+  items = [...(stored.items || []), group];
 
   // Save custom names
   if (Object.keys(newCustomNames).length > 0) {
-    Object.assign(customNames, newCustomNames);
+    customNames = { ...(stored.customNames || {}), ...newCustomNames };
     await chrome.storage.local.set({ customNames });
   }
 

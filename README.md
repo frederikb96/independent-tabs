@@ -37,9 +37,11 @@ Customize at `chrome://extensions/shortcuts`.
 
 | Shortcut | Action |
 |----------|--------|
-| **Arrow Up/Down** | Navigate tabs (activates without stealing focus) |
-| **Enter** | Focus the browser window of current tab |
+| **Arrow Up/Down** | Navigate tabs (popup: activates each tab; side panel: moves the cursor only, since activating a tab moves keyboard focus out of the side panel) |
+| **Home/End** | Jump to the first/last tab |
+| **Enter** | Activate the tab under the cursor and focus its window |
 | **Shift+Arrow Up/Down** | Extend selection (contiguous range) |
+| **/** | Search; Arrow Up/Down walk the matches, Enter opens one |
 | **W** | Close focused tab (or all selected) |
 | **Space** | Rename tab (single) or create group (multi-select) |
 | **S** | Switch to Sessions view |
@@ -71,7 +73,8 @@ Customize at `chrome://extensions/shortcuts`.
 - Auto-closes on blur for fast workflow
 
 **Tabs**
-- Click to activate (stays in panel), Enter to focus browser window
+- Click to activate, Enter to focus browser window
+- The active tab is shown in bold
 - Drag to reorder, × to close
 - Right-click → Rename tab (shown in *italic*)
 - Multi-select: Ctrl+click (toggle) or Shift+click (range)
@@ -104,7 +107,7 @@ Customize at `chrome://extensions/shortcuts`.
 ## How It Works
 
 ```
-Tab opened    → added to your list (top or bottom per setting)
+Tab opened    → added to your list (top or bottom per setting), also while the panel is closed
 Tab closed    → removed from your list
 Tab reordered → (ignored) your order stays the same
 You drag      → your order updates, Chrome unchanged

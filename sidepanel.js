@@ -11,18 +11,14 @@ let selectedTabs = new Set();  // Currently selected tab IDs
 let lastClickedTab = null;     // For Shift+click range selection
 let sortableInstances = [];    // Track SortableJS instances
 let keyboardFocusedTabId = null;  // For keyboard navigation
-let selectionAnchorTabId = null;  // Anchor for Shift+comma/dot range selection
+let selectionAnchorTabId = null;  // Anchor for Shift+Arrow range selection
 let savedSessions = {};   // Saved session storage
 let currentView = 'tabs'; // Current view: 'tabs' or 'sessions'
 let keyboardFocusedSessionId = null;  // For session keyboard navigation
 let sessionSortOrder = 'modified';  // Sort field: 'modified', 'created', 'name'
 let sessionSortAsc = false;         // Sort direction: false = descending (newest/Z first)
 let searchQuery = '';               // Current search query
-let restoringTabIds = new Set();  // Tab IDs being restored (skip in onCreated)
-
-// Debounce queue for tab removal (prevents race conditions when closing multiple tabs)
-let removeQueue = [];
-let removeTimeout = null;
+let isPopupWindow = false;          // Opened with the popup shortcut instead of in the side panel
 
 // Autosave queue for groups with autoSave enabled
 let autosaveQueue = new Set();
@@ -43,15 +39,6 @@ async function init() {
   sessionSortOrder = stored.settings?.sessionSortOrder || 'modified';
   sessionSortAsc = stored.settings?.sessionSortAsc ?? false;
 
-  // Migration from old tabOrder format
-  if (items.length === 0) {
-    const oldData = await chrome.storage.local.get('tabOrder');
-    if (oldData.tabOrder) {
-      items = oldData.tabOrder;
-      await saveItems();
-    }
-  }
-
   // Query all normal browser windows (excludes PWAs, apps, popups)
   const tabs = await chrome.tabs.query({ windowType: 'normal' });
   tabs.forEach(tab => {
@@ -62,6 +49,7 @@ async function init() {
 
   // Set initial cursor to the active tab (side panel: current window, popup: last focused browser window)
   const currentWin = await chrome.windows.getCurrent();
+  isPopupWindow = currentWin.type === 'popup';
   let activeTab = tabs.find(t => t.active && t.windowId === currentWin.id);
   if (!activeTab) {
     const lastFocused = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
@@ -77,8 +65,7 @@ async function init() {
   setupSearch();
 
   // Popup window mode: save size on resize (covers all close methods), Escape to close
-  const currentWindow = await chrome.windows.getCurrent();
-  if (currentWindow.type === 'popup') {
+  if (isPopupWindow) {
     let resizeTimer = null;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
@@ -91,7 +78,7 @@ async function init() {
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        chrome.windows.remove(currentWindow.id);
+        chrome.windows.remove(currentWin.id);
       }
     });
   }
@@ -112,49 +99,24 @@ async function saveItems() {
   await chrome.storage.local.set({ items });
 }
 
-// Sync items with actual Chrome tabs
+// Sync items with actual Chrome tabs; the service worker tracks them, this catches up on
+// anything it missed
 async function syncItemsWithTabs(tabs) {
-  const currentTabIds = new Set(tabs.map(t => t.id));
-
-  // Remove closed tabs from items and groups
-  items = items.filter(item => {
-    if (typeof item === 'number') {
-      return currentTabIds.has(item);
-    } else if (item.group) {
-      item.tabs = item.tabs.filter(id => currentTabIds.has(id));
-      return item.tabs.length > 0; // Remove empty groups
-    }
-    return false;
-  });
-
-  // Get all tab IDs currently in items
-  const itemTabIds = new Set(getAllTabIds());
-
-  // Add missing tabs
   const { settings = { newTabPosition: 'bottom' } } = await chrome.storage.local.get('settings');
-  const missingTabs = tabs.filter(t => !itemTabIds.has(t.id));
-
-  missingTabs.forEach(tab => {
-    if (settings.newTabPosition === 'top') {
-      items.unshift(tab.id);
-    } else {
-      items.push(tab.id);
-    }
-  });
-
-  await saveItems();
+  const next = reconcile(items, tabs, settings.newTabPosition);
+  if (!sameItems(items, next)) {
+    items = next;
+    await saveItems();
+  }
 }
 
 function getAllTabIds() {
-  const ids = [];
-  items.forEach(item => {
-    if (typeof item === 'number') {
-      ids.push(item);
-    } else if (item.group) {
-      ids.push(...item.tabs);
-    }
-  });
-  return ids;
+  return allTabIds(items);
+}
+
+// Tabs in list order that the current search shows
+function getVisibleTabIds() {
+  return getAllTabIds().filter(id => tabData[id] && tabMatchesSearch(id));
 }
 
 function setupEventListeners() {
@@ -204,64 +166,26 @@ function setupEventListeners() {
     }
   });
 
-  chrome.tabs.onCreated.addListener(async (tab) => {
-    // Skip tabs from PWAs, apps, and popups
-    const win = await chrome.windows.get(tab.windowId);
-    if (win.type !== 'normal') return;
-
+  // The service worker adds new tabs to the stored order; the list re-renders from the
+  // storage change. A tab still missing a moment later (an order written concurrently by
+  // another view) is added here.
+  chrome.tabs.onCreated.addListener((tab) => {
     tabData[tab.id] = extractTabData(tab);
-    const { settings = { newTabPosition: 'bottom' } } = await chrome.storage.local.get('settings');
-
-    // Check AFTER await - by now restoringTabIds will be populated if this is a restore
-    if (restoringTabIds.has(tab.id)) {
-      restoringTabIds.delete(tab.id);
-      return;
-    }
-
-    // Check shared restore flag (handles multiple sidepanel instances running simultaneously)
-    const { restoreInProgress } = await chrome.storage.session.get('restoreInProgress');
-    if (restoreInProgress && Date.now() - restoreInProgress < 10000) {
-      return;
-    }
-
-    // Skip if tab already exists in items (prevents duplicates across multiple instances)
-    if (getAllTabIds().includes(tab.id)) return;
-
-    // Check if opener tab is in a group - add child tab to same group
-    if (tab.openerTabId) {
-      const openerGroupId = getTabGroupId(tab.openerTabId);
-      if (openerGroupId) {
-        const group = items.find(item => item.group === openerGroupId);
-        if (group) {
-          if (settings.newTabPosition === 'top') {
-            group.tabs.unshift(tab.id);
-          } else {
-            group.tabs.push(tab.id);
-          }
-          await saveItems();
-          render();
-          queueAutosave(openerGroupId);
-          return;
-        }
-      }
-    }
-
-    // Default: add to root level
-    if (settings.newTabPosition === 'top') {
-      items.unshift(tab.id);
-    } else {
-      items.push(tab.id);
-    }
-    await saveItems();
-    render();
+    setTimeout(async () => {
+      if (!tabData[tab.id] || getAllTabIds().includes(tab.id)) return;
+      const { restoreInProgress } = await chrome.storage.session.get('restoreInProgress');
+      if (restoreInProgress && Date.now() - restoreInProgress < 10000) return;
+      await syncItemsWithTabs(await chrome.tabs.query({ windowType: 'normal' }));
+      render();
+    }, 1000);
   });
 
-  // Debounced removal handler - batches rapid tab closures to prevent race conditions
+  // The service worker removes closed tabs from the stored order
   chrome.tabs.onRemoved.addListener((tabId) => {
-    removeQueue.push(tabId);
-
-    if (removeTimeout) clearTimeout(removeTimeout);
-    removeTimeout = setTimeout(processRemoveQueue, 50);
+    delete tabData[tabId];
+    selectedTabs.delete(tabId);
+    if (keyboardFocusedTabId === tabId) keyboardFocusedTabId = null;
+    checkAutosaveForRemovedTabs();
   });
 
   // Click outside to clear selection
@@ -271,56 +195,6 @@ function setupEventListeners() {
       render();
     }
   });
-}
-
-// Process batched tab removals - prevents race conditions with storage listener
-async function processRemoveQueue() {
-  if (removeQueue.length === 0) return;
-
-  const tabIds = [...removeQueue];
-  removeQueue = [];
-  removeTimeout = null;
-
-  const removedSet = new Set(tabIds);
-
-  // Clean up state for all removed tabs
-  tabIds.forEach(id => {
-    delete tabData[id];
-    selectedTabs.delete(id);
-    if (keyboardFocusedTabId === id) {
-      keyboardFocusedTabId = null;
-    }
-  });
-
-  // Single filter pass for all removed tabs
-  items = items.filter(item => {
-    if (typeof item === 'number') {
-      return !removedSet.has(item);
-    } else if (item.group) {
-      item.tabs = item.tabs.filter(id => !removedSet.has(id));
-      return item.tabs.length > 0;  // Remove empty groups
-    }
-    return false;
-  });
-
-  // Clean up custom names
-  let customNamesChanged = false;
-  tabIds.forEach(id => {
-    if (customNames[id]) {
-      delete customNames[id];
-      customNamesChanged = true;
-    }
-  });
-
-  if (customNamesChanged) {
-    await chrome.storage.local.set({ customNames });
-  }
-
-  await saveItems();
-  render();
-
-  // Check if any removed tabs were in autosave groups
-  checkAutosaveForRemovedTabs(tabIds);
 }
 
 // Queue a group for autosave (debounced)
@@ -374,9 +248,9 @@ async function processAutosaveQueue() {
 }
 
 // Check if removed tabs affect any autosave groups
-function checkAutosaveForRemovedTabs(removedTabIds) {
-  // After removal, check which groups might need autosave
-  // The tabs are already removed, so we just trigger autosave for any autosave-enabled groups
+function checkAutosaveForRemovedTabs() {
+  // Queues every autosave group; by the time the debounced save runs, the service worker has
+  // removed the closed tabs from the stored order
   items.forEach(item => {
     if (item.group && item.autoSave && item.linkedSessionId) {
       queueAutosave(item.group);
@@ -466,6 +340,7 @@ function renderTab(tabId) {
   const item = document.createElement('div');
   item.className = 'tab-item';
   if (keyboardFocusedTabId === tabId) item.classList.add('keyboard-focused');
+  if (data.active) item.classList.add('active-tab');
   if (selectedTabs.has(tabId)) item.classList.add('selected');
   item.dataset.tabId = tabId;
 
@@ -1246,72 +1121,17 @@ function setupKeyboardNavigation() {
         if (focusedEl) focusedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         document.getElementById('sessions-list').focus();
       } else {
-        // Tab navigation
-        const allTabIds = getAllTabIds();
-        if (allTabIds.length === 0) return;
-
-        let currentIndex;
-        if (keyboardFocusedTabId !== null && allTabIds.includes(keyboardFocusedTabId)) {
-          currentIndex = allTabIds.indexOf(keyboardFocusedTabId);
-        } else {
-          const activeTabId = Object.keys(tabData).find(id => tabData[id].active);
-          currentIndex = activeTabId ? allTabIds.indexOf(parseInt(activeTabId)) : -1;
-        }
-
-        if (e.key === 'ArrowDown') {
-          currentIndex = currentIndex < allTabIds.length - 1 ? currentIndex + 1 : currentIndex;
-        } else {
-          currentIndex = currentIndex > 0 ? currentIndex - 1 : (currentIndex === -1 ? allTabIds.length - 1 : currentIndex);
-        }
-
-        const newTabId = allTabIds[currentIndex];
-        if (newTabId === undefined) return;
-
-        // Shift+Arrow extends selection
-        if (e.shiftKey) {
-          if (selectionAnchorTabId === null) {
-            selectionAnchorTabId = keyboardFocusedTabId;
-          }
-
-          keyboardFocusedTabId = newTabId;
-
-          const anchorIdx = allTabIds.indexOf(selectionAnchorTabId);
-          const focusIdx = allTabIds.indexOf(keyboardFocusedTabId);
-          const [from, to] = anchorIdx <= focusIdx ? [anchorIdx, focusIdx] : [focusIdx, anchorIdx];
-
-          selectedTabs.clear();
-          for (let i = from; i <= to; i++) {
-            selectedTabs.add(allTabIds[i]);
-          }
-
-          render();
-
-          const focusedEl = document.querySelector(`.tab-item[data-tab-id="${newTabId}"]`);
-          if (focusedEl) focusedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-          document.getElementById('tab-list').focus();
-        } else {
-          keyboardFocusedTabId = newTabId;
-          lastClickedTab = newTabId;
-          selectedTabs.clear();
-          selectionAnchorTabId = null;
-
-          await chrome.tabs.update(newTabId, { active: true });
-          render();
-
-          const focusedEl = document.querySelector(`.tab-item[data-tab-id="${newTabId}"]`);
-          if (focusedEl) focusedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-          document.getElementById('tab-list').focus();
-        }
+        await moveTabCursor(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey);
       }
-    } else if (e.key === 'Enter' && currentView === 'tabs' && keyboardFocusedTabId !== null) {
-      // Enter activates focused tab and focuses its window (same as click)
+    } else if ((e.key === 'Home' || e.key === 'End') && currentView === 'tabs') {
       e.preventDefault();
-      selectedTabs.clear();
-      selectionAnchorTabId = null;
-      const tab = await chrome.tabs.get(keyboardFocusedTabId);
-      await chrome.tabs.update(keyboardFocusedTabId, { active: true });
-      await chrome.windows.update(tab.windowId, { focused: true });
-      render();
+      await moveTabCursor(e.key === 'End' ? Infinity : -Infinity, e.shiftKey);
+    } else if (e.key === '/' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      document.getElementById('search-input').focus();
+    } else if (e.key === 'Enter' && currentView === 'tabs' && keyboardFocusedTabId !== null) {
+      e.preventDefault();
+      await openFocusedTab();
     } else if (e.key === 'Enter' && currentView === 'sessions' && keyboardFocusedSessionId) {
       // Enter restores the focused session
       e.preventDefault();
@@ -1320,7 +1140,7 @@ function setupKeyboardNavigation() {
       // W closes focused tab or all selected tabs
       e.preventDefault();
 
-      const allTabIds = getAllTabIds();
+      const allTabIds = getVisibleTabIds();
       if (allTabIds.length === 0) return;
 
       if (selectedTabs.size > 1) {
@@ -1345,7 +1165,7 @@ function setupKeyboardNavigation() {
 
         if (nextTabId) {
           keyboardFocusedTabId = nextTabId;
-          await chrome.tabs.update(nextTabId, { active: true });
+          if (isPopupWindow) await chrome.tabs.update(nextTabId, { active: true });
         }
 
         await chrome.tabs.remove(tabsToClose);
@@ -1358,7 +1178,7 @@ function setupKeyboardNavigation() {
 
         if (nextTabId) {
           keyboardFocusedTabId = nextTabId;
-          await chrome.tabs.update(nextTabId, { active: true });
+          if (isPopupWindow) await chrome.tabs.update(nextTabId, { active: true });
         }
 
         await chrome.tabs.remove(tabToClose);
@@ -1396,6 +1216,56 @@ function setupKeyboardNavigation() {
       }
     }
   });
+}
+
+// Moves the keyboard cursor through the tabs the list shows. In the popup window the tab under
+// the cursor becomes active right away. In the side panel it does not: activating a tab moves
+// keyboard focus from the side panel into that tab's page, so the next key would go to the page.
+// There, Enter opens the tab under the cursor.
+async function moveTabCursor(delta, extendSelection) {
+  const visible = getVisibleTabIds();
+  if (visible.length === 0) return;
+
+  let index = visible.indexOf(keyboardFocusedTabId);
+  if (index === -1) {
+    const activeId = Object.keys(tabData).map(Number).find(id => tabData[id].active);
+    index = visible.indexOf(activeId);
+  }
+  if (index === -1) {
+    index = delta > 0 ? 0 : visible.length - 1;
+  } else {
+    index = Math.max(0, Math.min(visible.length - 1, index + (Number.isFinite(delta) ? delta : delta * visible.length)));
+  }
+  const newTabId = visible[index];
+
+  if (extendSelection) {
+    if (selectionAnchorTabId === null) selectionAnchorTabId = keyboardFocusedTabId ?? newTabId;
+    keyboardFocusedTabId = newTabId;
+    const anchorIdx = Math.max(0, visible.indexOf(selectionAnchorTabId));
+    const [from, to] = anchorIdx <= index ? [anchorIdx, index] : [index, anchorIdx];
+    selectedTabs = new Set(visible.slice(from, to + 1));
+  } else {
+    keyboardFocusedTabId = newTabId;
+    lastClickedTab = newTabId;
+    selectedTabs.clear();
+    selectionAnchorTabId = null;
+    if (isPopupWindow) await chrome.tabs.update(newTabId, { active: true });
+  }
+
+  render();
+  const focusedEl = document.querySelector(`.tab-item[data-tab-id="${newTabId}"]`);
+  if (focusedEl) focusedEl.scrollIntoView({ block: 'nearest' });
+}
+
+// Enter: activates the tab under the cursor and focuses its window
+async function openFocusedTab() {
+  if (keyboardFocusedTabId === null) return;
+  selectedTabs.clear();
+  selectionAnchorTabId = null;
+  const tab = await chrome.tabs.get(keyboardFocusedTabId);
+  await chrome.tabs.update(tab.id, { active: true });
+  await chrome.windows.update(tab.windowId, { focused: true });
+  render();
 }
 
 // View Toggle
@@ -1452,6 +1322,9 @@ function setupSearch() {
     searchClear.classList.toggle('hidden', !searchQuery);
 
     if (currentView === 'tabs') {
+      // Keep the cursor on a tab the search shows, so Enter opens a match
+      const visible = getVisibleTabIds();
+      if (!visible.includes(keyboardFocusedTabId)) keyboardFocusedTabId = visible[0] ?? null;
       render();
     } else {
       renderSessions();
@@ -1471,10 +1344,22 @@ function setupSearch() {
     }
   });
 
-  // Escape to clear search
-  searchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
+  // Arrows move through the matches, Enter opens one, Escape clears the search
+  searchInput.addEventListener('keydown', async (e) => {
+    if (currentView === 'tabs' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      await moveTabCursor(e.key === 'ArrowDown' ? 1 : -1, false);
+    } else if (currentView === 'tabs' && e.key === 'Enter') {
+      e.preventDefault();
+      if (!getVisibleTabIds().includes(keyboardFocusedTabId)) return;
+      searchQuery = '';
+      searchInput.value = '';
+      searchClear.classList.add('hidden');
+      searchInput.blur();
+      await openFocusedTab();
+    } else if (e.key === 'Escape') {
       if (searchQuery) {
+        e.stopPropagation();  // a first Escape only clears the search, also in the popup window
         searchQuery = '';
         searchInput.value = '';
         searchClear.classList.add('hidden');
@@ -1602,7 +1487,7 @@ async function restoreSession(sessionId) {
     return;
   }
 
-  // Signal other sidepanel instances to skip onCreated during restore
+  // Tell the service worker not to add the restored tabs to the list on their own
   await chrome.storage.session.set({ restoreInProgress: Date.now() });
 
   const BATCH_SIZE = 5;
@@ -1626,7 +1511,6 @@ async function restoreSession(sessionId) {
     results.forEach((result, idx) => {
       if (result.status === 'fulfilled') {
         const newTabId = result.value.id;
-        restoringTabIds.add(newTabId);  // Mark IMMEDIATELY so onCreated skips it
         createdTabIds.push(newTabId);
         tabData[newTabId] = extractTabData(result.value);
 
@@ -1648,7 +1532,7 @@ async function restoreSession(sessionId) {
     return;
   }
 
-  // Create group with restored tabs (onCreated skipped adding these due to restoringTabIds)
+  // Create group with restored tabs (the service worker skips them while restoreInProgress is set)
   const group = {
     group: generateGroupId(),
     name: session.name,
