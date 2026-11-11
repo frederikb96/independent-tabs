@@ -21,10 +21,6 @@ let extensionId;
 const page = (n) => `data:text/html,<title>Page ${n}</title>`;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-async function worker() {
-  return context.serviceWorkers()[0] ?? context.waitForEvent('serviceworker');
-}
-
 // An extension page used to drive chrome.* while no list view is open
 async function driver() {
   const p = await context.newPage();
@@ -48,11 +44,16 @@ async function openList() {
   return p;
 }
 
-// Stops the service worker the way the browser does after it was idle
+// Stops the service worker the way the browser does after it was idle; the next extension event
+// starts it again. Playwright keeps the old worker handle, which no longer answers.
 async function stopWorker(p) {
   const cdp = await context.newCDPSession(p);
+  const stopped = new Promise(done => cdp.on('ServiceWorker.workerVersionUpdated', ({ versions }) => {
+    if (versions.some(v => v.runningStatus === 'stopped')) done();
+  }));
   await cdp.send('ServiceWorker.enable');
   await cdp.send('ServiceWorker.stopAllWorkers');
+  await stopped;
   await cdp.detach();
 }
 
@@ -66,7 +67,8 @@ beforeAll(async () => {
     headless: true,
     args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
   });
-  extensionId = new URL((await worker()).url()).host;
+  const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
+  extensionId = new URL(worker.url()).host;
 });
 
 afterAll(async () => {
@@ -80,7 +82,9 @@ beforeEach(async () => {
   const keep = pages[0] ?? await context.newPage();
   await keep.goto('about:blank');
   for (const p of pages.slice(1)) await p.close();
-  await (await worker()).evaluate(() => chrome.storage.local.set({ items: [] }));
+  const d = await driver();
+  await d.evaluate(() => chrome.storage.local.set({ items: [] }));
+  await d.close();
 });
 
 test('tabs opened while no list is open keep their opening order after the worker was stopped', async () => {
@@ -99,6 +103,10 @@ test('tabs opened while no list is open keep their opening order after the worke
     for (const [index, id] of [...ids].reverse().entries()) await chrome.tabs.move(id, { index });
   }, [1, 2, 3, 4].map(page));
   await sleep(300);
+
+  // The restarted worker tracked them before any list opened
+  const tracked = await storedOrder(d);
+  expect(tracked.filter(t => typeof t === 'string' && t.startsWith('Page'))).toEqual(['Page 1', 'Page 2', 'Page 3', 'Page 4']);
 
   const list = await openList();
   const order = await storedOrder(list);
